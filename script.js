@@ -134,11 +134,7 @@ function limparLocaisIguaisASessao(porSessao) {
             return;
         }
 
-        limpo[sessao] = locais.filter(local => {
-            if (!local) return false;
-            if (ESTRUTURA_TRE_PADRAO[sessao]) return true;
-            return normalizarChaveLocal(local) !== normalizarChaveLocal(sessao);
-        });
+        limpo[sessao] = locais.filter(Boolean);
     });
 
     return limpo;
@@ -147,13 +143,7 @@ function limparLocaisIguaisASessao(porSessao) {
 function getLocaisDaSessao(sessao) {
     const locaisFixos = ESTRUTURA_TRE[sessao] || [];
     const locaisBanco = locaisPorSessao[sessao] || [];
-    const locais = Array.from(new Set([...locaisFixos, ...locaisBanco]));
-
-    if (!ESTRUTURA_TRE_PADRAO[sessao]) {
-        return locais.filter(local => normalizarChaveLocal(local) !== normalizarChaveLocal(sessao));
-    }
-
-    return locais;
+    return Array.from(new Set([...locaisFixos, ...locaisBanco]));
 }
 
 function verificarFluxoSessao() {
