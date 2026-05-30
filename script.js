@@ -91,29 +91,6 @@ function carregarSessoesDoMapa() {
         selectSessao.value = sessaoSelecionada;
     }
 
-    renderBotoesSessao();
-}
-
-function renderBotoesSessao() {
-    const container = document.getElementById("botoesSessao");
-    const sessaoAtual = getSessaoAtual();
-    container.innerHTML = "";
-
-    Object.keys(ESTRUTURA_TRE).forEach(sessao => {
-        const botao = document.createElement("button");
-        botao.type = "button";
-        botao.textContent = sessao;
-        botao.className = sessao === sessaoAtual ? "ativo" : "";
-        botao.addEventListener("click", () => selecionarSessao(sessao));
-        container.appendChild(botao);
-    });
-}
-
-function selecionarSessao(sessao) {
-    const selectSessao = document.getElementById("selectSessao");
-    selectSessao.value = sessao;
-    verificarFluxoSessao();
-    renderBotoesSessao();
 }
 
 function aplicarSessoesConfiguradas(lista) {
@@ -171,38 +148,13 @@ function verificarFluxoSessao() {
             selectLocal.appendChild(opt);
         });
         blocoLocal.style.display = "block";
-        renderBotoesLocal(locaisDisponiveis);
         limparTelaResumo();
         return;
     }
 
     blocoLocal.style.display = "none";
-    document.getElementById("botoesLocal").innerHTML = "";
     localAtivoFiltro = locaisDisponiveis[0] || "";
     ativarMonitoramentoFiltro();
-}
-
-function renderBotoesLocal(locais) {
-    const container = document.getElementById("botoesLocal");
-    const localAtual = getLocalAtual();
-    container.innerHTML = "";
-
-    locais.forEach(local => {
-        const botao = document.createElement("button");
-        botao.type = "button";
-        botao.textContent = local;
-        botao.className = local === localAtual ? "ativo" : "";
-        botao.addEventListener("click", () => selecionarLocal(local));
-        container.appendChild(botao);
-    });
-}
-
-function selecionarLocal(local) {
-    const selectLocal = document.getElementById("selectLocal");
-    selectLocal.value = local;
-    localAtivoFiltro = local;
-    ativarMonitoramentoFiltro();
-    renderBotoesLocal(getLocaisDaSessao(getSessaoAtual()));
 }
 
 function getSessaoAtual() {
@@ -395,7 +347,7 @@ async function abrirScanner() {
     iniciarCameraTraseira()
         .catch(erro => {
             console.error(erro);
-            mostrarMensagem("mensagem", "Nao foi possivel abrir a camera traseira. Verifique permissao e use HTTPS.", "erro");
+            mostrarMensagem("mensagem", "Nao encontrei uma camera traseira valida neste navegador.", "erro");
             document.getElementById("btnAbrirScanner").disabled = false;
             scanner = null;
         });
@@ -408,15 +360,127 @@ async function iniciarCameraTraseira() {
         experimentalFeatures: { useBarCodeDetectorIfSupported: true }
     };
 
-    await scanner.start(
-        { facingMode: { exact: "environment" } },
-        config,
-        codigo => processarCodigoScanner(codigo),
-        () => {}
-    );
+    const cameras = await listarCamerasDoAparelho();
+    const candidatas = ordenarCamerasParaLeitura(cameras);
 
-    await ajustarCameraParaLeituraPerto();
-    mostrarMensagem("mensagem", "Camera traseira aberta.", "sucesso");
+    for (const camera of candidatas) {
+        try {
+            await scanner.start(
+                camera.id,
+                config,
+                codigo => processarCodigoScanner(codigo),
+                () => {}
+            );
+
+            await aguardar(350);
+
+            if (cameraAtivaPareceFrontal()) {
+                await pararScannerSilencioso();
+                scanner = new Html5Qrcode("reader");
+                continue;
+            }
+
+            await ajustarCameraParaLeituraPerto();
+            mostrarMensagem("mensagem", "Camera traseira aberta.", "sucesso");
+            return;
+        } catch (erro) {
+            console.warn("Camera recusada.", camera.label || camera.id, erro);
+            await pararScannerSilencioso();
+            scanner = new Html5Qrcode("reader");
+        }
+    }
+
+    throw new Error("Nenhuma camera traseira foi aceita pelo navegador.");
+}
+
+async function listarCamerasDoAparelho() {
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        let stream = null;
+
+        try {
+            stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        } finally {
+            if (stream) stream.getTracks().forEach(track => track.stop());
+        }
+    }
+
+    if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const cameras = devices
+            .filter(device => device.kind === "videoinput")
+            .map((device, index) => ({
+                id: device.deviceId,
+                label: device.label || `Camera ${index + 1}`,
+                index
+            }));
+
+        if (cameras.length) return cameras;
+    }
+
+    if (Html5Qrcode.getCameras) {
+        const cameras = await Html5Qrcode.getCameras();
+        return cameras.map((camera, index) => ({ ...camera, index }));
+    }
+
+    return [];
+}
+
+function ordenarCamerasParaLeitura(cameras) {
+    return cameras
+        .filter(camera => camera && camera.id)
+        .filter(camera => !ehCameraFrontal(camera.label))
+        .sort((a, b) => pontuarCameraLeitura(b) - pontuarCameraLeitura(a));
+}
+
+function pontuarCameraLeitura(camera) {
+    const label = normalizarChave(camera.label || "");
+    let pontos = 0;
+
+    if (label.includes("back") || label.includes("rear") || label.includes("traseira") || label.includes("environment")) pontos += 100;
+    if (label.includes("main") || label.includes("principal")) pontos += 30;
+    if (label.includes("wide")) pontos += 10;
+    if (label.includes("tele")) pontos -= 10;
+    if (label.includes("ultra") || label.includes("0 5") || label.includes("macro")) pontos -= 30;
+    pontos += (camera.index || 0);
+
+    return pontos;
+}
+
+function ehCameraFrontal(label) {
+    const texto = normalizarChave(label || "");
+    return texto.includes("front")
+        || texto.includes("frontal")
+        || texto.includes("selfie")
+        || texto.includes("user")
+        || texto.includes("dianteira");
+}
+
+function cameraAtivaPareceFrontal() {
+    const video = document.querySelector("#reader video");
+    const stream = video && video.srcObject;
+    const track = stream && stream.getVideoTracks ? stream.getVideoTracks()[0] : null;
+
+    if (!track) return false;
+
+    const settings = track.getSettings ? track.getSettings() : {};
+    const label = track.label || "";
+
+    return settings.facingMode === "user" || ehCameraFrontal(label);
+}
+
+async function pararScannerSilencioso() {
+    if (!scanner) return;
+
+    try {
+        if (scanner.isScanning) await scanner.stop();
+        await scanner.clear();
+    } catch (erro) {
+        console.warn(erro);
+    }
+}
+
+function aguardar(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 async function ajustarCameraParaLeituraPerto() {
