@@ -99,7 +99,7 @@ function aplicarSessoesConfiguradas(lista) {
     lista.forEach(sessao => {
         const nome = normalizarTexto(sessao).toUpperCase();
         if (!nome) return;
-        estrutura[nome] = ESTRUTURA_TRE_PADRAO[nome] || [nome];
+        estrutura[nome] = ESTRUTURA_TRE_PADRAO[nome] || [];
     });
 
     ESTRUTURA_TRE = estrutura;
@@ -128,7 +128,13 @@ function carregarLocaisDoFirebase() {
 function getLocaisDaSessao(sessao) {
     const locaisFixos = ESTRUTURA_TRE[sessao] || [];
     const locaisBanco = locaisPorSessao[sessao] || [];
-    return Array.from(new Set([...locaisFixos, ...locaisBanco]));
+    const locais = Array.from(new Set([...locaisFixos, ...locaisBanco]));
+
+    if (!ESTRUTURA_TRE_PADRAO[sessao]) {
+        return locais.filter(local => normalizarChaveLocal(local) !== normalizarChaveLocal(sessao));
+    }
+
+    return locais;
 }
 
 function verificarFluxoSessao() {
