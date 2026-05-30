@@ -38,7 +38,6 @@ let localAtivoFiltro = "";
 let locaisPorSessao = {};
 let listenerSessoesAtivo = null;
 let listenerLocaisAtivo = null;
-let camerasDisponiveis = [];
 
 document.addEventListener("DOMContentLoaded", iniciarSistema);
 
@@ -55,7 +54,6 @@ function iniciarSistema() {
 
     iniciarMonitoramentoSessoes();
     iniciarMonitoramentoLocais();
-    carregarCamerasDisponiveis();
 }
 
 function iniciarMonitoramentoSessoes() {
@@ -92,6 +90,30 @@ function carregarSessoesDoMapa() {
     if (sessaoSelecionada && ESTRUTURA_TRE[sessaoSelecionada]) {
         selectSessao.value = sessaoSelecionada;
     }
+
+    renderBotoesSessao();
+}
+
+function renderBotoesSessao() {
+    const container = document.getElementById("botoesSessao");
+    const sessaoAtual = getSessaoAtual();
+    container.innerHTML = "";
+
+    Object.keys(ESTRUTURA_TRE).forEach(sessao => {
+        const botao = document.createElement("button");
+        botao.type = "button";
+        botao.textContent = sessao;
+        botao.className = sessao === sessaoAtual ? "ativo" : "";
+        botao.addEventListener("click", () => selecionarSessao(sessao));
+        container.appendChild(botao);
+    });
+}
+
+function selecionarSessao(sessao) {
+    const selectSessao = document.getElementById("selectSessao");
+    selectSessao.value = sessao;
+    verificarFluxoSessao();
+    renderBotoesSessao();
 }
 
 function aplicarSessoesConfiguradas(lista) {
@@ -149,13 +171,38 @@ function verificarFluxoSessao() {
             selectLocal.appendChild(opt);
         });
         blocoLocal.style.display = "block";
+        renderBotoesLocal(locaisDisponiveis);
         limparTelaResumo();
         return;
     }
 
     blocoLocal.style.display = "none";
+    document.getElementById("botoesLocal").innerHTML = "";
     localAtivoFiltro = locaisDisponiveis[0] || "";
     ativarMonitoramentoFiltro();
+}
+
+function renderBotoesLocal(locais) {
+    const container = document.getElementById("botoesLocal");
+    const localAtual = getLocalAtual();
+    container.innerHTML = "";
+
+    locais.forEach(local => {
+        const botao = document.createElement("button");
+        botao.type = "button";
+        botao.textContent = local;
+        botao.className = local === localAtual ? "ativo" : "";
+        botao.addEventListener("click", () => selecionarLocal(local));
+        container.appendChild(botao);
+    });
+}
+
+function selecionarLocal(local) {
+    const selectLocal = document.getElementById("selectLocal");
+    selectLocal.value = local;
+    localAtivoFiltro = local;
+    ativarMonitoramentoFiltro();
+    renderBotoesLocal(getLocaisDaSessao(getSessaoAtual()));
 }
 
 function getSessaoAtual() {
@@ -329,7 +376,7 @@ async function localizarPatrimonioLegado(numero, sessao, local) {
     return null;
 }
 
-function abrirScanner() {
+async function abrirScanner() {
     const user = document.getElementById("campoUsuario").value.trim();
     const sessaoSel = getSessaoAtual();
     const localSel = getLocalAtual();
@@ -345,8 +392,7 @@ function abrirScanner() {
     document.getElementById("btnAbrirScanner").disabled = true;
     mostrarMensagem("mensagem", "Abrindo camera...", "aviso");
 
-    iniciarCameraSelecionada()
-        .then(carregarCamerasDisponiveis)
+    iniciarCameraTraseira()
         .catch(erro => {
             console.error(erro);
             mostrarMensagem("mensagem", "Erro na camera. Verifique permissao e use HTTPS.", "erro");
@@ -355,31 +401,12 @@ function abrirScanner() {
         });
 }
 
-async function iniciarCameraSelecionada() {
+async function iniciarCameraTraseira() {
     const config = {
         fps: 10,
         qrbox: { width: 260, height: 170 },
-        experimentalFeatures: { useBarCodeDetectorIfSupported: true },
-        videoConstraints: {
-            advanced: [
-                { focusMode: "continuous" },
-                { zoom: 1 }
-            ]
-        }
+        experimentalFeatures: { useBarCodeDetectorIfSupported: true }
     };
-
-    const melhorCamera = escolherMelhorCameraTraseira();
-
-    if (melhorCamera) {
-        await scanner.start(
-            melhorCamera.id,
-            config,
-            codigo => processarCodigoScanner(codigo),
-            () => {}
-        );
-        mostrarMensagem("mensagem", "Camera traseira aberta.", "sucesso");
-        return;
-    }
 
     try {
         await scanner.start(
@@ -397,41 +424,38 @@ async function iniciarCameraSelecionada() {
         );
     }
 
+    await ajustarCameraParaLeituraPerto();
     mostrarMensagem("mensagem", "Camera traseira aberta.", "sucesso");
 }
 
-async function carregarCamerasDisponiveis() {
-    if (!Html5Qrcode || !Html5Qrcode.getCameras) return;
+async function ajustarCameraParaLeituraPerto() {
+    const video = document.querySelector("#reader video");
+    const stream = video && video.srcObject;
+    const track = stream && stream.getVideoTracks ? stream.getVideoTracks()[0] : null;
+
+    if (!track || !track.getCapabilities || !track.applyConstraints) return;
 
     try {
-        camerasDisponiveis = await Html5Qrcode.getCameras();
+        const capabilities = track.getCapabilities();
+        const advanced = [];
+
+        if (capabilities.focusMode && capabilities.focusMode.includes("continuous")) {
+            advanced.push({ focusMode: "continuous" });
+        }
+
+        if (capabilities.zoom) {
+            const min = capabilities.zoom.min || 1;
+            const max = capabilities.zoom.max || 1;
+            const zoomPerto = Math.min(Math.max(2, min), max);
+            advanced.push({ zoom: zoomPerto });
+        }
+
+        if (advanced.length) {
+            await track.applyConstraints({ advanced });
+        }
     } catch (erro) {
-        console.warn(erro);
+        console.warn("A camera nao aceitou ajuste de foco/zoom.", erro);
     }
-}
-
-function escolherMelhorCameraTraseira() {
-    const cameras = camerasDisponiveis
-        .filter(camera => camera && camera.id)
-        .filter(camera => pontuarCamera(camera) > 0);
-
-    if (!cameras.length) return null;
-    return [...cameras].sort((a, b) => pontuarCamera(b) - pontuarCamera(a))[0];
-}
-
-function pontuarCamera(camera) {
-    const label = normalizarChave(camera.label || "");
-    let pontos = 0;
-
-    if (label.includes("back") || label.includes("rear") || label.includes("traseira") || label.includes("environment")) pontos += 20;
-    if (label.includes("camera 0") || label.includes("camera0")) pontos += 8;
-    if (label.includes("wide")) pontos += 4;
-    if (label.includes("main") || label.includes("principal")) pontos += 6;
-    if (label.includes("front") || label.includes("frontal") || label.includes("selfie")) pontos -= 40;
-    if (label.includes("ultra") || label.includes("0.5") || label.includes("macro")) pontos -= 20;
-    if (label.includes("tele")) pontos -= 8;
-
-    return pontos;
 }
 
 async function processarCodigoScanner(codigo) {
