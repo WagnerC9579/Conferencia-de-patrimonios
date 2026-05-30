@@ -395,7 +395,7 @@ async function abrirScanner() {
     iniciarCameraTraseira()
         .catch(erro => {
             console.error(erro);
-            mostrarMensagem("mensagem", "Erro na camera. Verifique permissao e use HTTPS.", "erro");
+            mostrarMensagem("mensagem", "Nao foi possivel abrir a camera traseira. Verifique permissao e use HTTPS.", "erro");
             document.getElementById("btnAbrirScanner").disabled = false;
             scanner = null;
         });
@@ -408,21 +408,12 @@ async function iniciarCameraTraseira() {
         experimentalFeatures: { useBarCodeDetectorIfSupported: true }
     };
 
-    try {
-        await scanner.start(
-            { facingMode: { exact: "environment" } },
-            config,
-            codigo => processarCodigoScanner(codigo),
-            () => {}
-        );
-    } catch {
-        await scanner.start(
-            { facingMode: "environment" },
-            config,
-            codigo => processarCodigoScanner(codigo),
-            () => {}
-        );
-    }
+    await scanner.start(
+        { facingMode: { exact: "environment" } },
+        config,
+        codigo => processarCodigoScanner(codigo),
+        () => {}
+    );
 
     await ajustarCameraParaLeituraPerto();
     mostrarMensagem("mensagem", "Camera traseira aberta.", "sucesso");
