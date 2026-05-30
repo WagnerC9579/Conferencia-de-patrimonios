@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Inventario Patrimonial - TRE</title>
+    <link rel="stylesheet" href="style.css">
+
+    <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore-compat.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://unpkg.com/html5-qrcode"></script>
+</head>
+
+<body>
+    <main class="container">
+        <h1>Inventario Patrimonial - TRE</h1>
+
+        <section class="box">
+            <h2>Localizacao da Conferencia</h2>
+
+            <label for="selectSessao">1. Selecione a sua Sessao</label>
+            <select id="selectSessao">
+                <option value="" disabled selected>Escolha a sessao...</option>
+            </select>
+
+            <div id="blocoLocalColeta">
+                <label for="selectLocal">2. Selecione o Local da Coleta</label>
+                <select id="selectLocal">
+                    <option value="" disabled selected>Escolha o local...</option>
+                </select>
+            </div>
+        </section>
+
+        <section class="box">
+            <h2>Conferencia</h2>
+
+            <label for="campoUsuario">Responsavel</label>
+            <input type="text" id="campoUsuario" placeholder="Nome do Responsavel / Tecnico" autocomplete="name">
+
+            <label for="campopatrimonio">Patrimonio</label>
+            <input type="text" id="campopatrimonio" placeholder="Digite ou escaneie o patrimonio" inputmode="numeric">
+
+            <p id="mensagem" class="mensagem"></p>
+
+            <button id="btnConferir" type="button">Conferir manual</button>
+
+            <div class="scanner-acoes">
+                <button id="btnAbrirScanner" type="button">Iniciar leitura</button>
+                <button id="btnPararScanner" type="button" class="perigo">Parar leitura</button>
+            </div>
+
+            <div id="reader"></div>
+        </section>
+
+        <section class="box">
+            <h2 id="tituloResumo">Resumo da Unidade</h2>
+            <div class="resumo">
+                <p id="total">Total: 0</p>
+                <p id="pendentestotal">Pendentes: 0</p>
+                <p id="conferidostotal">Conferidos: 0</p>
+            </div>
+
+            <details open>
+                <summary>Pendentes</summary>
+                <ul id="listapatrimonios"></ul>
+            </details>
+
+            <details>
+                <summary>Conferidos</summary>
+                <ul id="listaconferidos"></ul>
+            </details>
+
+            <div class="grafico-container">
+                <canvas id="graficopatrimonio"></canvas>
+            </div>
+        </section>
+    </main>
+
+    <script src="script.js"></script>
+</body>
+</html>
