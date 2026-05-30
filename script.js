@@ -109,7 +109,7 @@ function iniciarMonitoramentoLocais() {
     if (listenerLocaisAtivo) listenerLocaisAtivo();
 
     listenerLocaisAtivo = configLocaisRef.onSnapshot(doc => {
-        locaisPorSessao = doc.exists && doc.data().porSessao ? doc.data().porSessao : {};
+        locaisPorSessao = limparLocaisIguaisASessao(doc.exists && doc.data().porSessao ? doc.data().porSessao : {});
         if (getSessaoAtual()) verificarFluxoSessao();
     }, erro => {
         console.error(erro);
@@ -118,11 +118,30 @@ function iniciarMonitoramentoLocais() {
 
 function carregarLocaisDoFirebase() {
     return configLocaisRef.get().then(doc => {
-        locaisPorSessao = doc.exists && doc.data().porSessao ? doc.data().porSessao : {};
+        locaisPorSessao = limparLocaisIguaisASessao(doc.exists && doc.data().porSessao ? doc.data().porSessao : {});
         if (getSessaoAtual()) verificarFluxoSessao();
     }).catch(erro => {
         console.error(erro);
     });
+}
+
+function limparLocaisIguaisASessao(porSessao) {
+    const limpo = {};
+
+    Object.entries(porSessao || {}).forEach(([sessao, locais]) => {
+        if (!Array.isArray(locais)) {
+            limpo[sessao] = [];
+            return;
+        }
+
+        limpo[sessao] = locais.filter(local => {
+            if (!local) return false;
+            if (ESTRUTURA_TRE_PADRAO[sessao]) return true;
+            return normalizarChaveLocal(local) !== normalizarChaveLocal(sessao);
+        });
+    });
+
+    return limpo;
 }
 
 function getLocaisDaSessao(sessao) {
