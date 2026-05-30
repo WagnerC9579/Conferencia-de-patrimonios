@@ -48,7 +48,6 @@ function iniciarSistema() {
     document.getElementById("btnConferir").addEventListener("click", buscarpatrimonio);
     document.getElementById("btnAbrirScanner").addEventListener("click", abrirScanner);
     document.getElementById("btnPararScanner").addEventListener("click", pararScanner);
-    document.getElementById("selectCamera").addEventListener("change", trocarCameraSeScannerAberto);
 
     document.getElementById("campopatrimonio").addEventListener("keydown", evento => {
         if (evento.key === "Enter") buscarpatrimonio();
@@ -357,7 +356,6 @@ function abrirScanner() {
 }
 
 async function iniciarCameraSelecionada() {
-    const cameraId = document.getElementById("selectCamera").value;
     const config = {
         fps: 10,
         qrbox: { width: 260, height: 170 },
@@ -370,14 +368,16 @@ async function iniciarCameraSelecionada() {
         }
     };
 
-    if (cameraId) {
+    const melhorCamera = escolherMelhorCameraTraseira();
+
+    if (melhorCamera) {
         await scanner.start(
-            cameraId,
+            melhorCamera.id,
             config,
             codigo => processarCodigoScanner(codigo),
             () => {}
         );
-        mostrarMensagem("mensagem", "Camera selecionada aberta.", "sucesso");
+        mostrarMensagem("mensagem", "Camera traseira aberta.", "sucesso");
         return;
     }
 
@@ -405,37 +405,16 @@ async function carregarCamerasDisponiveis() {
 
     try {
         camerasDisponiveis = await Html5Qrcode.getCameras();
-        preencherSelectCamera();
     } catch (erro) {
         console.warn(erro);
     }
 }
 
-function preencherSelectCamera() {
-    const select = document.getElementById("selectCamera");
-    const cameraAtual = select.value;
-    select.innerHTML = '<option value="">Camera traseira automatica</option>';
-
-    camerasDisponiveis
+function escolherMelhorCameraTraseira() {
+    const cameras = camerasDisponiveis
         .filter(camera => camera && camera.id)
-        .sort((a, b) => pontuarCamera(b) - pontuarCamera(a))
-        .forEach((camera, indice) => {
-            const opt = document.createElement("option");
-            opt.value = camera.id;
-            opt.textContent = camera.label || `Camera ${indice + 1}`;
-            select.appendChild(opt);
-        });
+        .filter(camera => pontuarCamera(camera) > 0);
 
-    const melhorCamera = escolherMelhorCamera();
-    if (cameraAtual && camerasDisponiveis.some(camera => camera.id === cameraAtual)) {
-        select.value = cameraAtual;
-    } else if (melhorCamera) {
-        select.value = melhorCamera.id;
-    }
-}
-
-function escolherMelhorCamera() {
-    const cameras = camerasDisponiveis.filter(camera => camera && camera.id);
     if (!cameras.length) return null;
     return [...cameras].sort((a, b) => pontuarCamera(b) - pontuarCamera(a))[0];
 }
@@ -453,13 +432,6 @@ function pontuarCamera(camera) {
     if (label.includes("tele")) pontos -= 8;
 
     return pontos;
-}
-
-async function trocarCameraSeScannerAberto() {
-    if (!scanner) return;
-
-    await pararScanner();
-    abrirScanner();
 }
 
 async function processarCodigoScanner(codigo) {
