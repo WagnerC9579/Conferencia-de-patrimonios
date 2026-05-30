@@ -10,8 +10,9 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 const colecao = db.collection("patrimonios");
+const configSessoesRef = db.collection("configuracoes").doc("sessoes");
 
-const ESTRUTURA_TRE = {
+const ESTRUTURA_TRE_PADRAO = {
     NSEIS: [
         "ADM",
         "SEDE",
@@ -26,18 +27,19 @@ const ESTRUTURA_TRE = {
     "038ZE": ["038ZE"]
 };
 
+let ESTRUTURA_TRE = { ...ESTRUTURA_TRE_PADRAO };
+
 let grafico = null;
 let listenerAtivo = null;
 let scanner = null;
 let scannerTravado = false;
 let localAtivoFiltro = "";
 let locaisPorSessao = {};
+let listenerSessoesAtivo = null;
 
 document.addEventListener("DOMContentLoaded", iniciarSistema);
 
 function iniciarSistema() {
-    carregarSessoesDoMapa();
-
     document.getElementById("selectSessao").addEventListener("change", verificarFluxoSessao);
     document.getElementById("selectLocal").addEventListener("change", ativarMonitoramentoFiltro);
     document.getElementById("btnConferir").addEventListener("click", buscarpatrimonio);
@@ -47,10 +49,32 @@ function iniciarSistema() {
     document.getElementById("campopatrimonio").addEventListener("keydown", evento => {
         if (evento.key === "Enter") buscarpatrimonio();
     });
+
+    iniciarMonitoramentoSessoes();
+}
+
+function iniciarMonitoramentoSessoes() {
+    if (listenerSessoesAtivo) listenerSessoesAtivo();
+
+    listenerSessoesAtivo = configSessoesRef.onSnapshot(doc => {
+        const lista = doc.exists && Array.isArray(doc.data().lista)
+            ? doc.data().lista
+            : Object.keys(ESTRUTURA_TRE_PADRAO);
+
+        aplicarSessoesConfiguradas(lista);
+        carregarSessoesDoMapa();
+        carregarLocaisDoFirebase();
+    }, erro => {
+        console.error(erro);
+        aplicarSessoesConfiguradas(Object.keys(ESTRUTURA_TRE_PADRAO));
+        carregarSessoesDoMapa();
+        carregarLocaisDoFirebase();
+    });
 }
 
 function carregarSessoesDoMapa() {
     const selectSessao = document.getElementById("selectSessao");
+    const sessaoSelecionada = selectSessao.value;
     selectSessao.innerHTML = '<option value="" disabled selected>Escolha a sessao...</option>';
 
     Object.keys(ESTRUTURA_TRE).forEach(sessao => {
@@ -60,7 +84,21 @@ function carregarSessoesDoMapa() {
         selectSessao.appendChild(opt);
     });
 
-    carregarLocaisDoFirebase();
+    if (sessaoSelecionada && ESTRUTURA_TRE[sessaoSelecionada]) {
+        selectSessao.value = sessaoSelecionada;
+    }
+}
+
+function aplicarSessoesConfiguradas(lista) {
+    const estrutura = {};
+
+    lista.forEach(sessao => {
+        const nome = normalizarTexto(sessao).toUpperCase();
+        if (!nome) return;
+        estrutura[nome] = ESTRUTURA_TRE_PADRAO[nome] || [nome];
+    });
+
+    ESTRUTURA_TRE = estrutura;
 }
 
 async function carregarLocaisDoFirebase() {

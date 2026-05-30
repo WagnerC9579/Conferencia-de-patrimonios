@@ -189,6 +189,26 @@ li {
     font-size: 15px;
 }
 
+.lista-admin {
+    padding: 0;
+    list-style: none;
+}
+
+.lista-admin li {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.lista-admin button {
+    width: auto;
+    min-height: 34px;
+    margin: 0;
+    padding: 6px 10px;
+    background-color: #c0392b;
+}
+
 .grafico-container {
     max-width: 320px;
     height: 300px;
