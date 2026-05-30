@@ -11,6 +11,7 @@ firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 const colecao = db.collection("patrimonios");
 const configSessoesRef = db.collection("configuracoes").doc("sessoes");
+const configLocaisRef = db.collection("configuracoes").doc("locais");
 
 const ESTRUTURA_TRE_PADRAO = {
     NSEIS: [
@@ -36,6 +37,8 @@ let scannerTravado = false;
 let localAtivoFiltro = "";
 let locaisPorSessao = {};
 let listenerSessoesAtivo = null;
+let listenerLocaisAtivo = null;
+let camerasDisponiveis = [];
 
 document.addEventListener("DOMContentLoaded", iniciarSistema);
 
@@ -45,12 +48,15 @@ function iniciarSistema() {
     document.getElementById("btnConferir").addEventListener("click", buscarpatrimonio);
     document.getElementById("btnAbrirScanner").addEventListener("click", abrirScanner);
     document.getElementById("btnPararScanner").addEventListener("click", pararScanner);
+    document.getElementById("selectCamera").addEventListener("change", trocarCameraSeScannerAberto);
 
     document.getElementById("campopatrimonio").addEventListener("keydown", evento => {
         if (evento.key === "Enter") buscarpatrimonio();
     });
 
     iniciarMonitoramentoSessoes();
+    iniciarMonitoramentoLocais();
+    carregarCamerasDisponiveis();
 }
 
 function iniciarMonitoramentoSessoes() {
@@ -101,26 +107,24 @@ function aplicarSessoesConfiguradas(lista) {
     ESTRUTURA_TRE = estrutura;
 }
 
-async function carregarLocaisDoFirebase() {
-    try {
-        const snapshot = await colecao.get();
-        const locais = {};
+function iniciarMonitoramentoLocais() {
+    if (listenerLocaisAtivo) listenerLocaisAtivo();
 
-        snapshot.forEach(doc => {
-            const item = doc.data();
-            if (!item.sessao || !item.local) return;
-            if (!locais[item.sessao]) locais[item.sessao] = new Set();
-            locais[item.sessao].add(item.local);
-        });
-
-        Object.keys(locais).forEach(sessao => {
-            locaisPorSessao[sessao] = Array.from(locais[sessao]).sort((a, b) => a.localeCompare(b, "pt-BR"));
-        });
-
+    listenerLocaisAtivo = configLocaisRef.onSnapshot(doc => {
+        locaisPorSessao = doc.exists && doc.data().porSessao ? doc.data().porSessao : {};
         if (getSessaoAtual()) verificarFluxoSessao();
-    } catch (erro) {
+    }, erro => {
         console.error(erro);
-    }
+    });
+}
+
+function carregarLocaisDoFirebase() {
+    return configLocaisRef.get().then(doc => {
+        locaisPorSessao = doc.exists && doc.data().porSessao ? doc.data().porSessao : {};
+        if (getSessaoAtual()) verificarFluxoSessao();
+    }).catch(erro => {
+        console.error(erro);
+    });
 }
 
 function getLocaisDaSessao(sessao) {
@@ -340,25 +344,122 @@ function abrirScanner() {
 
     scanner = new Html5Qrcode("reader");
     document.getElementById("btnAbrirScanner").disabled = true;
+    mostrarMensagem("mensagem", "Abrindo camera...", "aviso");
 
-    scanner.start(
-        { facingMode: { exact: "environment" } },
-        { fps: 10, qrbox: { width: 250, height: 160 } },
-        codigo => processarCodigoScanner(codigo),
-        () => {}
-    ).catch(() => {
-        scanner.start(
-            { facingMode: "environment" },
-            { fps: 10, qrbox: { width: 250, height: 160 } },
-            codigo => processarCodigoScanner(codigo),
-            () => {}
-        ).catch(erro => {
+    iniciarCameraSelecionada()
+        .then(carregarCamerasDisponiveis)
+        .catch(erro => {
             console.error(erro);
             mostrarMensagem("mensagem", "Erro na camera. Verifique permissao e use HTTPS.", "erro");
             document.getElementById("btnAbrirScanner").disabled = false;
             scanner = null;
         });
-    });
+}
+
+async function iniciarCameraSelecionada() {
+    const cameraId = document.getElementById("selectCamera").value;
+    const config = {
+        fps: 10,
+        qrbox: { width: 260, height: 170 },
+        experimentalFeatures: { useBarCodeDetectorIfSupported: true },
+        videoConstraints: {
+            advanced: [
+                { focusMode: "continuous" },
+                { zoom: 1 }
+            ]
+        }
+    };
+
+    if (cameraId) {
+        await scanner.start(
+            cameraId,
+            config,
+            codigo => processarCodigoScanner(codigo),
+            () => {}
+        );
+        mostrarMensagem("mensagem", "Camera selecionada aberta.", "sucesso");
+        return;
+    }
+
+    try {
+        await scanner.start(
+            { facingMode: { exact: "environment" } },
+            config,
+            codigo => processarCodigoScanner(codigo),
+            () => {}
+        );
+    } catch {
+        await scanner.start(
+            { facingMode: "environment" },
+            config,
+            codigo => processarCodigoScanner(codigo),
+            () => {}
+        );
+    }
+
+    mostrarMensagem("mensagem", "Camera traseira aberta.", "sucesso");
+}
+
+async function carregarCamerasDisponiveis() {
+    if (!Html5Qrcode || !Html5Qrcode.getCameras) return;
+
+    try {
+        camerasDisponiveis = await Html5Qrcode.getCameras();
+        preencherSelectCamera();
+    } catch (erro) {
+        console.warn(erro);
+    }
+}
+
+function preencherSelectCamera() {
+    const select = document.getElementById("selectCamera");
+    const cameraAtual = select.value;
+    select.innerHTML = '<option value="">Camera traseira automatica</option>';
+
+    camerasDisponiveis
+        .filter(camera => camera && camera.id)
+        .sort((a, b) => pontuarCamera(b) - pontuarCamera(a))
+        .forEach((camera, indice) => {
+            const opt = document.createElement("option");
+            opt.value = camera.id;
+            opt.textContent = camera.label || `Camera ${indice + 1}`;
+            select.appendChild(opt);
+        });
+
+    const melhorCamera = escolherMelhorCamera();
+    if (cameraAtual && camerasDisponiveis.some(camera => camera.id === cameraAtual)) {
+        select.value = cameraAtual;
+    } else if (melhorCamera) {
+        select.value = melhorCamera.id;
+    }
+}
+
+function escolherMelhorCamera() {
+    const cameras = camerasDisponiveis.filter(camera => camera && camera.id);
+    if (!cameras.length) return null;
+    return [...cameras].sort((a, b) => pontuarCamera(b) - pontuarCamera(a))[0];
+}
+
+function pontuarCamera(camera) {
+    const label = normalizarChave(camera.label || "");
+    let pontos = 0;
+
+    if (label.includes("back") || label.includes("rear") || label.includes("traseira") || label.includes("environment")) pontos += 20;
+    if (label.includes("camera 0") || label.includes("camera0")) pontos += 8;
+    if (label.includes("wide")) pontos += 4;
+    if (label.includes("main") || label.includes("principal")) pontos += 6;
+    if (label.includes("front") || label.includes("frontal") || label.includes("selfie")) pontos -= 40;
+    if (label.includes("ultra") || label.includes("0.5") || label.includes("macro")) pontos -= 20;
+    if (label.includes("tele")) pontos -= 8;
+
+    return pontos;
+}
+
+async function trocarCameraSeScannerAberto() {
+    if (!scanner) return;
+
+    await pararScanner();
+    abrirScanner();
 }
 
 async function processarCodigoScanner(codigo) {
