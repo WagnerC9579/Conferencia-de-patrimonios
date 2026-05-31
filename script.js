@@ -10,6 +10,7 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 const colecao = db.collection("patrimonios");
+const divergenciasColecao = db.collection("divergencias");
 const configSessoesRef = db.collection("configuracoes").doc("sessoes");
 const configLocaisRef = db.collection("configuracoes").doc("locais");
 
@@ -287,6 +288,7 @@ async function buscarpatrimonio() {
         const encontrado = await localizarPatrimonio(num, sessaoSel, localSel);
 
         if (!encontrado) {
+            await registrarDivergencia(num, sessaoSel, localSel, user);
             mostrarMensagem("mensagem", `Patrimônio ${num} não localizado nesta unidade.`, "erro");
             return;
         }
@@ -341,6 +343,17 @@ async function localizarPatrimonioLegado(numero, sessao, local) {
     }
 
     return null;
+}
+
+async function registrarDivergencia(numero, sessao, local, usuario) {
+    await divergenciasColecao.add({
+        numeroInformado: numero,
+        sessao,
+        local,
+        usuario,
+        motivo: "Patrimônio não localizado na lotação/local selecionado.",
+        criadoEm: firebase.firestore.FieldValue.serverTimestamp()
+    });
 }
 
 async function abrirScanner() {

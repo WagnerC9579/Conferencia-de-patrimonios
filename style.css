@@ -41,6 +41,10 @@ h2 {
     background-color: #f8fafc;
 }
 
+.area-relatorios {
+    margin-top: 28px;
+}
+
 .admin-escondido {
     display: none;
 }
@@ -49,6 +53,10 @@ h2 {
     display: grid;
     grid-template-columns: 1fr 220px;
     gap: 12px;
+}
+
+.relatorio-grid {
+    grid-template-columns: repeat(4, 1fr);
 }
 
 label {
@@ -215,13 +223,67 @@ li {
     margin: 20px auto 0;
 }
 
+.acoes-relatorio {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.resumo-relatorio {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.resumo-relatorio p {
+    margin: 0;
+    padding: 12px;
+    border: 1px solid #d8dee8;
+    border-radius: 6px;
+    background-color: #fff;
+    font-weight: bold;
+}
+
+.tabela-relatorio {
+    max-height: 360px;
+    margin-top: 12px;
+    overflow: auto;
+    border: 1px solid #d8dee8;
+    border-radius: 6px;
+    background-color: #fff;
+}
+
+.tabela-relatorio table {
+    width: 100%;
+    min-width: 780px;
+    border-collapse: collapse;
+}
+
+.tabela-relatorio th,
+.tabela-relatorio td {
+    padding: 9px 10px;
+    border-bottom: 1px solid #edf1f5;
+    text-align: left;
+    font-size: 14px;
+}
+
+.tabela-relatorio th {
+    position: sticky;
+    top: 0;
+    background-color: #eef3f8;
+    color: #263241;
+}
+
 @media (max-width: 700px) {
     body {
         padding: 10px;
     }
 
     .linha-form,
-    .resumo {
+    .relatorio-grid,
+    .resumo,
+    .resumo-relatorio {
         grid-template-columns: 1fr;
     }
 
