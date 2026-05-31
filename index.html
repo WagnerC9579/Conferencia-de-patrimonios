@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Inventario Patrimonial - TRE</title>
+    <title>Inventário patrimonial - TRE</title>
     <link rel="stylesheet" href="style.css">
 
     <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-app-compat.js"></script>
@@ -14,18 +14,18 @@
 
 <body>
     <main class="container">
-        <h1>Inventario Patrimonial - TRE</h1>
+        <h1>Inventário patrimonial - TRE</h1>
 
         <section class="box">
-            <h2>Localizacao da Conferencia</h2>
+            <h2>Localização da conferência</h2>
 
-            <label for="selectSessao">1. Selecione a sua Sessao</label>
+            <label for="selectSessao">1. Selecione sua lotação</label>
             <select id="selectSessao">
-                <option value="" disabled selected>Escolha a sessao...</option>
+                <option value="" disabled selected>Escolha a lotação...</option>
             </select>
 
             <div id="blocoLocalColeta">
-                <label for="selectLocal">2. Selecione o Local da Coleta</label>
+                <label for="selectLocal">2. Selecione o local de coleta</label>
                 <select id="selectLocal">
                     <option value="" disabled selected>Escolha o local...</option>
                 </select>
@@ -33,13 +33,13 @@
         </section>
 
         <section class="box">
-            <h2>Conferencia</h2>
+            <h2>Conferência</h2>
 
-            <label for="campoUsuario">Responsavel</label>
-            <input type="text" id="campoUsuario" placeholder="Nome do Responsavel / Tecnico" autocomplete="name">
+            <label for="campoUsuario">Responsável</label>
+            <input type="text" id="campoUsuario" placeholder="Digite seu nome" autocomplete="name">
 
-            <label for="campopatrimonio">Patrimonio</label>
-            <input type="text" id="campopatrimonio" placeholder="Digite ou escaneie o patrimonio" inputmode="numeric">
+            <label for="campopatrimonio">Patrimônio</label>
+            <input type="text" id="campopatrimonio" placeholder="Digite ou escaneie o patrimônio" inputmode="numeric">
 
             <p id="mensagem" class="mensagem"></p>
 
@@ -54,7 +54,7 @@
         </section>
 
         <section class="box">
-            <h2 id="tituloResumo">Resumo da Unidade</h2>
+            <h2 id="tituloResumo">Resumo da unidade</h2>
             <div class="resumo">
                 <p id="total">Total: 0</p>
                 <p id="pendentestotal">Pendentes: 0</p>
@@ -77,6 +77,6 @@
         </section>
     </main>
 
-    <script src="script.js?v=20260530-2040"></script>
+    <script src="script.js?v=20260530-2120"></script>
 </body>
 </html>

@@ -78,7 +78,7 @@ function iniciarMonitoramentoSessoes() {
 function carregarSessoesDoMapa() {
     const selectSessao = document.getElementById("selectSessao");
     const sessaoSelecionada = selectSessao.value;
-    selectSessao.innerHTML = '<option value="" disabled selected>Escolha a sessao...</option>';
+    selectSessao.innerHTML = '<option value="" disabled selected>Escolha a lotação...</option>';
 
     Object.keys(ESTRUTURA_TRE).forEach(sessao => {
         const opt = document.createElement("option");
@@ -215,13 +215,13 @@ function ativarMonitoramentoFiltro() {
             atualizarTela(pendentes, conferidos);
         }, erro => {
             console.error(erro);
-            mostrarMensagem("mensagem", "Erro ao carregar dados do Firebase.", "erro");
+            mostrarMensagem("mensagem", "Erro ao carregar os dados do Firebase.", "erro");
         });
 }
 
 function limparTelaResumo() {
     atualizarTela([], []);
-    document.getElementById("tituloResumo").textContent = "Resumo da Unidade";
+    document.getElementById("tituloResumo").textContent = "Resumo da unidade";
 }
 
 function atualizarTela(pendentes, conferidos) {
@@ -251,9 +251,9 @@ function render(id, lista, showUser) {
         const li = document.createElement("li");
         const partes = [
             item.patAntigo ? `Antigo: ${item.patAntigo}` : "",
-            item.descricao || "Sem descricao",
+            item.descricao || "Sem descrição",
             item.marca ? `Marca: ${item.marca}` : "",
-            showUser && item.usuario ? `Resp: ${item.usuario}` : ""
+            showUser && item.usuario ? `Responsável: ${item.usuario}` : ""
         ].filter(Boolean);
 
         li.textContent = `${item.numero} - ${partes.join(" | ")}`;
@@ -268,18 +268,18 @@ async function buscarpatrimonio() {
     const localSel = getLocalAtual();
 
     if (!user) {
-        mostrarMensagem("mensagem", "Digite o nome do responsavel.", "erro");
+        mostrarMensagem("mensagem", "Digite o nome do responsável.", "erro");
         document.getElementById("campoUsuario").focus();
         return;
     }
 
     if (!sessaoSel || !localSel) {
-        mostrarMensagem("mensagem", "Selecione a sessao e o local primeiro.", "erro");
+        mostrarMensagem("mensagem", "Selecione a lotação e o local primeiro.", "erro");
         return;
     }
 
     if (!num) {
-        mostrarMensagem("mensagem", "Digite ou escaneie o patrimonio.", "erro");
+        mostrarMensagem("mensagem", "Digite ou escaneie o patrimônio.", "erro");
         return;
     }
 
@@ -287,12 +287,12 @@ async function buscarpatrimonio() {
         const encontrado = await localizarPatrimonio(num, sessaoSel, localSel);
 
         if (!encontrado) {
-            mostrarMensagem("mensagem", `Patrimonio ${num} nao localizado nesta unidade.`, "erro");
+            mostrarMensagem("mensagem", `Patrimônio ${num} não localizado nesta unidade.`, "erro");
             return;
         }
 
         if (encontrado.dados.status === "conferido") {
-            mostrarMensagem("mensagem", `Patrimonio ${num} ja estava conferido.`, "aviso");
+            mostrarMensagem("mensagem", `Patrimônio ${num} já estava conferido.`, "aviso");
             return;
         }
 
@@ -303,10 +303,10 @@ async function buscarpatrimonio() {
         });
 
         vibrar();
-        mostrarMensagem("mensagem", `Codigo ${encontrado.dados.numero} conferido por ${user}.`, "sucesso");
+        mostrarMensagem("mensagem", `Código ${encontrado.dados.numero} conferido por ${user}.`, "sucesso");
     } catch (erro) {
         console.error(erro);
-        mostrarMensagem("mensagem", "Erro ao conferir patrimonio.", "erro");
+        mostrarMensagem("mensagem", "Erro ao conferir o patrimônio.", "erro");
     } finally {
         document.getElementById("campopatrimonio").value = "";
     }
@@ -349,7 +349,7 @@ async function abrirScanner() {
     const localSel = getLocalAtual();
 
     if (!user || !sessaoSel || !localSel) {
-        mostrarMensagem("mensagem", "Informe responsavel, sessao e local antes de abrir a camera.", "erro");
+        mostrarMensagem("mensagem", "Informe o responsável, a lotação e o local antes de abrir a câmera.", "erro");
         return;
     }
 
@@ -357,12 +357,12 @@ async function abrirScanner() {
 
     scanner = new Html5Qrcode("reader");
     document.getElementById("btnAbrirScanner").disabled = true;
-    mostrarMensagem("mensagem", "Abrindo camera...", "aviso");
+    mostrarMensagem("mensagem", "Abrindo câmera...", "aviso");
 
     iniciarCameraTraseira()
         .catch(erro => {
             console.error(erro);
-            mostrarMensagem("mensagem", "Nao encontrei uma camera traseira valida neste navegador.", "erro");
+            mostrarMensagem("mensagem", "Não encontrei uma câmera traseira válida neste navegador.", "erro");
             document.getElementById("btnAbrirScanner").disabled = false;
             scanner = null;
         });
@@ -396,16 +396,16 @@ async function iniciarCameraTraseira() {
             }
 
             await ajustarCameraParaLeituraPerto();
-            mostrarMensagem("mensagem", "Camera traseira aberta.", "sucesso");
+            mostrarMensagem("mensagem", "Câmera traseira aberta.", "sucesso");
             return;
         } catch (erro) {
-            console.warn("Camera recusada.", camera.label || camera.id, erro);
+            console.warn("Câmera recusada.", camera.label || camera.id, erro);
             await pararScannerSilencioso();
             scanner = new Html5Qrcode("reader");
         }
     }
 
-    throw new Error("Nenhuma camera traseira foi aceita pelo navegador.");
+    throw new Error("Nenhuma câmera traseira foi aceita pelo navegador.");
 }
 
 async function listarCamerasDoAparelho() {
@@ -425,7 +425,7 @@ async function listarCamerasDoAparelho() {
             .filter(device => device.kind === "videoinput")
             .map((device, index) => ({
                 id: device.deviceId,
-                label: device.label || `Camera ${index + 1}`,
+                label: device.label || `Câmera ${index + 1}`,
                 index
             }));
 
@@ -524,7 +524,7 @@ async function ajustarCameraParaLeituraPerto() {
             await track.applyConstraints({ advanced });
         }
     } catch (erro) {
-        console.warn("A camera nao aceitou ajuste de foco/zoom.", erro);
+        console.warn("A câmera não aceitou ajuste de foco/zoom.", erro);
     }
 }
 
