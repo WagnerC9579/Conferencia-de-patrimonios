@@ -45,6 +45,16 @@ h2 {
     margin-top: 28px;
 }
 
+.limpeza-manual {
+    margin-top: 12px;
+}
+
+.texto-apoio {
+    margin: 6px 0 0;
+    color: #5f6f82;
+    font-size: 14px;
+}
+
 .admin-escondido {
     display: none;
 }
