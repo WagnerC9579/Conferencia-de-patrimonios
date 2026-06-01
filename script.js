@@ -13,6 +13,7 @@ const colecao = db.collection("patrimonios");
 const divergenciasColecao = db.collection("divergencias");
 const configSessoesRef = db.collection("configuracoes").doc("sessoes");
 const configLocaisRef = db.collection("configuracoes").doc("locais");
+const PREFIXO_SEGURANCA_PATRIMONIO = "67";
 
 const ESTRUTURA_TRE_PADRAO = {
     NSEIS: [
@@ -264,6 +265,7 @@ function render(id, lista, showUser) {
 
 async function buscarpatrimonio() {
     const num = somenteDigitos(document.getElementById("campopatrimonio").value);
+    const numSemPrefixo = removerPrefixoSegurancaPatrimonio(num);
     const user = document.getElementById("campoUsuario").value.trim();
     const sessaoSel = getSessaoAtual();
     const localSel = getLocalAtual();
@@ -288,8 +290,8 @@ async function buscarpatrimonio() {
         const encontrado = await localizarPatrimonio(num, sessaoSel, localSel);
 
         if (!encontrado) {
-            await registrarDivergencia(num, sessaoSel, localSel, user);
-            mostrarMensagem("mensagem", `Patrimônio ${num} não localizado nesta unidade.`, "erro");
+            await registrarDivergencia(num, numSemPrefixo, sessaoSel, localSel, user);
+            mostrarMensagem("mensagem", `Patrimônio ${numSemPrefixo} não localizado nesta unidade.`, "erro");
             return;
         }
 
@@ -315,12 +317,16 @@ async function buscarpatrimonio() {
 }
 
 async function localizarPatrimonio(numero, sessao, local) {
-    const doc = await colecao.doc(criarIdItem(sessao, local, numero)).get();
+    const numerosBusca = gerarNumerosBuscaPatrimonio(numero);
 
-    if (doc.exists) {
-        const dados = doc.data();
-        if (dados.sessao === sessao && dados.local === local) {
-            return { ref: doc.ref, dados };
+    for (const numeroBusca of numerosBusca) {
+        const doc = await colecao.doc(criarIdItem(sessao, local, numeroBusca)).get();
+
+        if (doc.exists) {
+            const dados = doc.data();
+            if (dados.sessao === sessao && dados.local === local) {
+                return { ref: doc.ref, dados };
+            }
         }
     }
 
@@ -328,7 +334,7 @@ async function localizarPatrimonio(numero, sessao, local) {
 }
 
 async function localizarPatrimonioLegado(numero, sessao, local) {
-    const numeroNormalizado = removerZerosAEsquerda(numero);
+    const numerosBusca = gerarNumerosBuscaPatrimonio(numero);
     const snapshot = await colecao
         .where("sessao", "==", sessao)
         .where("local", "==", local)
@@ -337,7 +343,7 @@ async function localizarPatrimonioLegado(numero, sessao, local) {
     for (const doc of snapshot.docs) {
         const dados = doc.data();
         const candidatos = gerarAliasesNumero(dados.numero, dados.patAntigo);
-        if (candidatos.includes(numero) || candidatos.includes(numeroNormalizado)) {
+        if (numerosBusca.some(numeroBusca => candidatos.includes(numeroBusca))) {
             return { ref: doc.ref, dados };
         }
     }
@@ -345,9 +351,10 @@ async function localizarPatrimonioLegado(numero, sessao, local) {
     return null;
 }
 
-async function registrarDivergencia(numero, sessao, local, usuario) {
+async function registrarDivergencia(numero, numeroSemPrefixo, sessao, local, usuario) {
     await divergenciasColecao.add({
         numeroInformado: numero,
+        numeroSemPrefixo,
         sessao,
         local,
         usuario,
@@ -605,6 +612,28 @@ function somenteDigitos(valor) {
 function removerZerosAEsquerda(valor) {
     const numero = somenteDigitos(valor);
     return numero.replace(/^0+/, "") || "0";
+}
+
+function removerPrefixoSegurancaPatrimonio(valor) {
+    const numero = somenteDigitos(valor);
+
+    if (numero.startsWith(PREFIXO_SEGURANCA_PATRIMONIO) && numero.length > PREFIXO_SEGURANCA_PATRIMONIO.length) {
+        return numero.slice(PREFIXO_SEGURANCA_PATRIMONIO.length);
+    }
+
+    return numero;
+}
+
+function gerarNumerosBuscaPatrimonio(valor) {
+    const numero = somenteDigitos(valor);
+    const semPrefixo = removerPrefixoSegurancaPatrimonio(numero);
+
+    return Array.from(new Set([
+        numero,
+        semPrefixo,
+        removerZerosAEsquerda(numero),
+        removerZerosAEsquerda(semPrefixo)
+    ].filter(Boolean)));
 }
 
 function gerarAliasesNumero(...valores) {
