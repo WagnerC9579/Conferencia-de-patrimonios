@@ -11,6 +11,7 @@ firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 const colecao = db.collection("patrimonios");
 const divergenciasColecao = db.collection("divergencias");
+const transferenciasColecao = db.collection("transferencias");
 const configSessoesRef = db.collection("configuracoes").doc("sessoes");
 const configLocaisRef = db.collection("configuracoes").doc("locais");
 const PREFIXO_SEGURANCA_PATRIMONIO = "67";
@@ -49,6 +50,7 @@ function iniciarSistema() {
     document.getElementById("btnConferir").addEventListener("click", buscarpatrimonio);
     document.getElementById("btnAbrirScanner").addEventListener("click", abrirScanner);
     document.getElementById("btnPararScanner").addEventListener("click", pararScanner);
+    document.getElementById("btnExportarRelatorioOperador").addEventListener("click", exportarRelatorioOperador);
 
     document.getElementById("campopatrimonio").addEventListener("keydown", evento => {
         if (evento.key === "Enter") buscarpatrimonio();
@@ -290,8 +292,21 @@ async function buscarpatrimonio() {
         const encontrado = await localizarPatrimonio(num, sessaoSel, localSel);
 
         if (!encontrado) {
+            const encontradoEmOutroLocal = await localizarPatrimonioEmTodoBanco(num, sessaoSel, localSel);
+
+            if (encontradoEmOutroLocal) {
+                await registrarTransferencia(num, numSemPrefixo, encontradoEmOutroLocal, sessaoSel, localSel, user);
+                vibrar();
+                mostrarMensagem(
+                    "mensagem",
+                    `Patrimônio cadastrado em ${encontradoEmOutroLocal.dados.sessao} / ${encontradoEmOutroLocal.dados.local}. Registrado para transferência.`,
+                    "aviso"
+                );
+                return;
+            }
+
             await registrarDivergencia(num, numSemPrefixo, sessaoSel, localSel, user);
-            mostrarMensagem("mensagem", `Patrimônio ${numSemPrefixo} não localizado nesta unidade.`, "erro");
+            mostrarMensagem("mensagem", `Patrimônio ${numSemPrefixo} não localizado no banco.`, "erro");
             return;
         }
 
@@ -351,6 +366,39 @@ async function localizarPatrimonioLegado(numero, sessao, local) {
     return null;
 }
 
+async function localizarPatrimonioEmTodoBanco(numero, sessaoAtual, localAtual) {
+    const numerosBusca = gerarNumerosBuscaPatrimonio(numero);
+    const candidatos = [];
+
+    try {
+        const snapshotAliases = await colecao
+            .where("aliases", "array-contains-any", numerosBusca.slice(0, 10))
+            .get();
+
+        snapshotAliases.forEach(doc => candidatos.push(doc));
+    } catch (erro) {
+        console.warn("Busca por aliases indisponível. Usando varredura simples.", erro);
+    }
+
+    if (!candidatos.length) {
+        const snapshot = await colecao.get();
+        snapshot.forEach(doc => candidatos.push(doc));
+    }
+
+    for (const doc of candidatos) {
+        const dados = doc.data();
+        const aliases = gerarAliasesNumero(dados.numero, dados.patAntigo);
+        const mesmoNumero = numerosBusca.some(numeroBusca => aliases.includes(numeroBusca));
+        const mesmoLocal = dados.sessao === sessaoAtual && dados.local === localAtual;
+
+        if (mesmoNumero && !mesmoLocal) {
+            return { ref: doc.ref, dados };
+        }
+    }
+
+    return null;
+}
+
 async function registrarDivergencia(numero, numeroSemPrefixo, sessao, local, usuario) {
     await divergenciasColecao.add({
         numeroInformado: numero,
@@ -361,6 +409,33 @@ async function registrarDivergencia(numero, numeroSemPrefixo, sessao, local, usu
         motivo: "Patrimônio não localizado na lotação/local selecionado.",
         criadoEm: firebase.firestore.FieldValue.serverTimestamp()
     });
+}
+
+async function registrarTransferencia(numeroInformado, numeroSemPrefixo, encontrado, sessaoEncontrada, localEncontrado, usuario) {
+    const dados = encontrado.dados;
+    const id = criarIdTransferencia(dados.sessao, dados.local, sessaoEncontrada, localEncontrado, dados.numero || numeroSemPrefixo);
+    const ref = transferenciasColecao.doc(id);
+    const existente = await ref.get();
+
+    await ref.set({
+        numeroInformado,
+        numeroSemPrefixo,
+        numero: dados.numero || numeroSemPrefixo,
+        patAntigo: dados.patAntigo || "",
+        descricao: dados.descricao || "",
+        marca: dados.marca || "",
+        lotacaoCadastrada: dados.sessao || "",
+        localCadastrado: dados.local || "",
+        lotacaoEncontrada: sessaoEncontrada,
+        localEncontrado,
+        responsavel: usuario,
+        status: "Transferência pendente",
+        motivo: "Patrimônio encontrado fisicamente em local diferente do cadastro.",
+        primeiraLeituraEm: existente.exists && existente.data().primeiraLeituraEm
+            ? existente.data().primeiraLeituraEm
+            : firebase.firestore.FieldValue.serverTimestamp(),
+        ultimaLeituraEm: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
 }
 
 async function abrirScanner() {
@@ -605,6 +680,138 @@ function atualizarGrafico(p, c) {
     });
 }
 
+async function exportarRelatorioOperador() {
+    const sessao = getSessaoAtual();
+    const local = getLocalAtual();
+    const tipo = document.getElementById("tipoRelatorioOperador").value;
+    const abrangencia = document.getElementById("abrangenciaRelatorioOperador").value;
+
+    if (!sessao || (abrangencia === "local" && !local)) {
+        mostrarMensagem("mensagemRelatorioOperador", "Selecione a lotação e o local antes de exportar.", "erro");
+        return;
+    }
+
+    try {
+        mostrarMensagem("mensagemRelatorioOperador", "Gerando relatório...", "aviso");
+
+        const relatorio = tipo === "transferencias"
+            ? await montarRelatorioTransferenciasOperador(sessao, local, abrangencia)
+            : await montarRelatorioPatrimoniosOperador(sessao, local, abrangencia, tipo);
+
+        if (!relatorio.linhas.length) {
+            mostrarMensagem("mensagemRelatorioOperador", "Nenhum registro encontrado para este relatório.", "aviso");
+            return;
+        }
+
+        exportarExcel(relatorio);
+        mostrarMensagem("mensagemRelatorioOperador", `Relatório exportado com ${relatorio.linhas.length} registro(s).`, "sucesso");
+    } catch (erro) {
+        console.error(erro);
+        mostrarMensagem("mensagemRelatorioOperador", "Erro ao gerar o relatório.", "erro");
+    }
+}
+
+async function montarRelatorioPatrimoniosOperador(sessao, local, abrangencia, tipo) {
+    const snapshot = await colecao.where("sessao", "==", sessao).get();
+    let itens = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+    itens = itens.filter(item => {
+        if (abrangencia === "local" && item.local !== local) return false;
+        if (tipo === "pendentes" && item.status === "conferido") return false;
+        if (tipo === "conferidos" && item.status !== "conferido") return false;
+        return true;
+    });
+
+    ordenarPorNumero(itens);
+
+    return {
+        nome: `Relatório ${nomeTipoRelatorioOperador(tipo)} - ${sessao}`,
+        colunas: ["Lotação", "Local", "Patrimônio", "Patrimônio antigo", "Descrição", "Marca", "Status", "Responsável", "Data da conferência"],
+        linhas: itens.map(item => ({
+            "Lotação": item.sessao || "",
+            "Local": item.local || "",
+            "Patrimônio": item.numero || "",
+            "Patrimônio antigo": item.patAntigo || "",
+            "Descrição": item.descricao || "",
+            "Marca": item.marca || "",
+            "Status": item.status === "conferido" ? "Conferido" : "Pendente",
+            "Responsável": item.usuario || "",
+            "Data da conferência": formatarData(item.conferidoEm)
+        }))
+    };
+}
+
+async function montarRelatorioTransferenciasOperador(sessao, local, abrangencia) {
+    const snapshot = await transferenciasColecao.where("lotacaoEncontrada", "==", sessao).get();
+    let itens = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+    if (abrangencia === "local") {
+        itens = itens.filter(item => item.localEncontrado === local);
+    }
+
+    itens.sort((a, b) => dataParaMillis(b.ultimaLeituraEm || b.primeiraLeituraEm) - dataParaMillis(a.ultimaLeituraEm || a.primeiraLeituraEm));
+
+    return {
+        nome: `Itens a transferir - ${sessao}`,
+        colunas: [
+            "Patrimônio",
+            "Patrimônio antigo",
+            "Descrição",
+            "Marca",
+            "Lotação cadastrada",
+            "Local cadastrado",
+            "Lotação encontrada",
+            "Local encontrado",
+            "Responsável",
+            "Data da leitura",
+            "Situação"
+        ],
+        linhas: itens.map(item => ({
+            "Patrimônio": item.numero || item.numeroSemPrefixo || item.numeroInformado || "",
+            "Patrimônio antigo": item.patAntigo || "",
+            "Descrição": item.descricao || "",
+            "Marca": item.marca || "",
+            "Lotação cadastrada": item.lotacaoCadastrada || "",
+            "Local cadastrado": item.localCadastrado || "",
+            "Lotação encontrada": item.lotacaoEncontrada || "",
+            "Local encontrado": item.localEncontrado || "",
+            "Responsável": item.responsavel || "",
+            "Data da leitura": formatarData(item.ultimaLeituraEm || item.primeiraLeituraEm),
+            "Situação": item.status || "Transferência pendente"
+        }))
+    };
+}
+
+function exportarExcel(relatorio) {
+    const planilha = XLSX.utils.json_to_sheet(relatorio.linhas, { header: relatorio.colunas });
+    const arquivo = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(arquivo, planilha, "Relatório");
+    XLSX.writeFile(arquivo, `${normalizarNomeArquivo(relatorio.nome)}.xlsx`);
+}
+
+function nomeTipoRelatorioOperador(tipo) {
+    const nomes = {
+        pendentes: "de pendentes",
+        conferidos: "de conferidos",
+        todos: "completo"
+    };
+
+    return nomes[tipo] || "do local";
+}
+
+function formatarData(valor) {
+    if (!valor) return "";
+    const data = valor.toDate ? valor.toDate() : new Date(valor);
+    if (Number.isNaN(data.getTime())) return "";
+    return data.toLocaleString("pt-BR");
+}
+
+function dataParaMillis(valor) {
+    if (!valor) return 0;
+    const data = valor.toDate ? valor.toDate() : new Date(valor);
+    return Number.isNaN(data.getTime()) ? 0 : data.getTime();
+}
+
 function somenteDigitos(valor) {
     return String(valor || "").replace(/\D/g, "").trim();
 }
@@ -680,6 +887,16 @@ function criarIdItem(sessao, local, numero) {
     return [sessao, local, somenteDigitos(numero)]
         .map(parte => normalizarChaveLocal(parte).replace(/[^a-z0-9]+/g, "-"))
         .join("__");
+}
+
+function criarIdTransferencia(lotacaoCadastrada, localCadastrado, lotacaoEncontrada, localEncontrado, numero) {
+    return [lotacaoCadastrada, localCadastrado, lotacaoEncontrada, localEncontrado, somenteDigitos(numero)]
+        .map(parte => normalizarChaveLocal(parte).replace(/[^a-z0-9]+/g, "-"))
+        .join("__");
+}
+
+function normalizarNomeArquivo(valor) {
+    return normalizarChave(valor).replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "relatorio";
 }
 
 function vibrar() {

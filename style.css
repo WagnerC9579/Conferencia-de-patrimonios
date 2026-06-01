@@ -59,6 +59,10 @@ h2 {
     grid-template-columns: repeat(4, 1fr);
 }
 
+.relatorio-grid-operador {
+    grid-template-columns: repeat(2, 1fr);
+}
+
 label {
     display: block;
     margin: 8px 0 5px;
@@ -148,11 +152,18 @@ button.perigo:hover {
 #reader {
     width: 100%;
     max-width: 330px;
+    min-height: 190px;
     margin-top: 12px;
     border: 1px solid #d8dee8;
     border-radius: 8px;
     overflow: hidden;
     background-color: #fff;
+}
+
+#reader video {
+    width: 100% !important;
+    max-height: 240px;
+    object-fit: cover;
 }
 
 .resumo {
@@ -282,6 +293,7 @@ li {
 
     .linha-form,
     .relatorio-grid,
+    .relatorio-grid-operador,
     .resumo,
     .resumo-relatorio {
         grid-template-columns: 1fr;
@@ -290,5 +302,39 @@ li {
     button {
         width: 100%;
         margin-right: 0;
+    }
+
+    .container {
+        padding: 12px;
+        border-radius: 8px;
+    }
+
+    h1 {
+        font-size: 1.35rem;
+    }
+
+    .box {
+        margin-top: 10px;
+        padding: 12px;
+    }
+
+    .resumo,
+    .grafico-container,
+    .relatorio-operador {
+        display: none;
+    }
+
+    #reader {
+        max-width: 100%;
+        min-height: 170px;
+        max-height: 220px;
+    }
+
+    #reader video {
+        max-height: 210px;
+    }
+
+    details {
+        margin-top: 10px;
     }
 }

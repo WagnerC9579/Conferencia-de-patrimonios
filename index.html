@@ -8,6 +8,7 @@
 
     <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore-compat.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://unpkg.com/html5-qrcode"></script>
 </head>
@@ -75,8 +76,35 @@
                 <canvas id="graficopatrimonio"></canvas>
             </div>
         </section>
+
+        <section id="relatoriosOperador" class="box area-relatorios relatorio-operador">
+            <h2>Relatórios</h2>
+
+            <div class="linha-form relatorio-grid-operador">
+                <label for="tipoRelatorioOperador">
+                    Tipo de relatório
+                    <select id="tipoRelatorioOperador">
+                        <option value="pendentes">Pendentes</option>
+                        <option value="conferidos">Conferidos</option>
+                        <option value="todos">Todos</option>
+                        <option value="transferencias">Itens a transferir</option>
+                    </select>
+                </label>
+
+                <label for="abrangenciaRelatorioOperador">
+                    Abrangência
+                    <select id="abrangenciaRelatorioOperador">
+                        <option value="local">Apenas este local</option>
+                        <option value="lotacao">Toda a lotação</option>
+                    </select>
+                </label>
+            </div>
+
+            <button id="btnExportarRelatorioOperador" type="button">Exportar Excel</button>
+            <p id="mensagemRelatorioOperador" class="mensagem"></p>
+        </section>
     </main>
 
-    <script src="script.js?v=20260601-1010"></script>
+    <script src="script.js?v=20260601-1530"></script>
 </body>
 </html>
