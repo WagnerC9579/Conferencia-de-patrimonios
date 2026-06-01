@@ -450,6 +450,7 @@ async function abrirScanner() {
 
     if (scanner) return;
 
+    mostrarAreaScanner(true);
     scanner = new Html5Qrcode("reader");
     document.getElementById("btnAbrirScanner").disabled = true;
     mostrarMensagem("mensagem", "Abrindo câmera...", "aviso");
@@ -460,6 +461,8 @@ async function abrirScanner() {
             mostrarMensagem("mensagem", "Não encontrei uma câmera traseira válida neste navegador.", "erro");
             document.getElementById("btnAbrirScanner").disabled = false;
             scanner = null;
+            scannerTravado = false;
+            mostrarAreaScanner(false);
         });
 }
 
@@ -496,6 +499,7 @@ async function iniciarCameraTraseira() {
         } catch (erro) {
             console.warn("Câmera recusada.", camera.label || camera.id, erro);
             await pararScannerSilencioso();
+            mostrarAreaScanner(true);
             scanner = new Html5Qrcode("reader");
         }
     }
@@ -589,6 +593,15 @@ async function pararScannerSilencioso() {
     }
 }
 
+function mostrarAreaScanner(visivel) {
+    const reader = document.getElementById("reader");
+    reader.classList.toggle("scanner-visivel", visivel);
+
+    if (!visivel) {
+        reader.innerHTML = "";
+    }
+}
+
 function aguardar(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -638,6 +651,9 @@ async function processarCodigoScanner(codigo) {
 function pararScanner() {
     if (!scanner) {
         document.getElementById("btnAbrirScanner").disabled = false;
+        scannerTravado = false;
+        mostrarAreaScanner(false);
+        limparMensagemCameraAberta();
         return;
     }
 
@@ -646,11 +662,23 @@ function pararScanner() {
         scanner = null;
         scannerTravado = false;
         document.getElementById("btnAbrirScanner").disabled = false;
+        mostrarAreaScanner(false);
+        limparMensagemCameraAberta();
     }).catch(erro => {
         console.error(erro);
         scanner = null;
+        scannerTravado = false;
         document.getElementById("btnAbrirScanner").disabled = false;
+        mostrarAreaScanner(false);
+        limparMensagemCameraAberta();
     });
+}
+
+function limparMensagemCameraAberta() {
+    const msg = document.getElementById("mensagem");
+    if (msg.textContent === "Câmera traseira aberta." || msg.textContent === "Abrindo câmera...") {
+        mostrarMensagem("mensagem", "Câmera fechada.", "aviso");
+    }
 }
 
 function atualizarGrafico(p, c) {

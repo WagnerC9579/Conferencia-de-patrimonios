@@ -150,6 +150,7 @@ button.perigo:hover {
 }
 
 #reader {
+    display: none;
     width: 100%;
     max-width: 330px;
     min-height: 190px;
@@ -158,6 +159,10 @@ button.perigo:hover {
     border-radius: 8px;
     overflow: hidden;
     background-color: #fff;
+}
+
+#reader.scanner-visivel {
+    display: block;
 }
 
 #reader video {
@@ -318,7 +323,6 @@ li {
         padding: 12px;
     }
 
-    .resumo,
     .grafico-container,
     .relatorio-operador {
         display: none;
