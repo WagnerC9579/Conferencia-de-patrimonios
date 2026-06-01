@@ -55,6 +55,32 @@
         </section>
 
         <section class="box">
+            <details>
+                <summary>Contagem sem leitura</summary>
+
+                <div class="linha-form contagem-grid">
+                    <label for="tipoItemContagem">
+                        Tipo do item
+                        <input type="text" id="tipoItemContagem" placeholder="Ex: Câmera, access point, TV">
+                    </label>
+
+                    <label for="quantidadeContagem">
+                        Quantidade
+                        <input type="number" id="quantidadeContagem" min="1" step="1" placeholder="Ex: 6">
+                    </label>
+                </div>
+
+                <label for="observacaoContagem">
+                    Observação
+                    <input type="text" id="observacaoContagem" placeholder="Ex: Item em altura, sem acesso à etiqueta">
+                </label>
+
+                <button id="btnRegistrarContagem" type="button">Registrar contagem</button>
+                <p id="mensagemContagem" class="mensagem"></p>
+            </details>
+        </section>
+
+        <section class="box">
             <h2 id="tituloResumo">Resumo da unidade</h2>
             <div class="resumo">
                 <p id="total">Total: 0</p>
@@ -88,6 +114,7 @@
                         <option value="conferidos">Conferidos</option>
                         <option value="todos">Todos</option>
                         <option value="transferencias">Itens a transferir</option>
+                        <option value="contagens">Contagem sem leitura</option>
                     </select>
                 </label>
 
@@ -105,6 +132,6 @@
         </section>
     </main>
 
-    <script src="script.js?v=20260601-1530"></script>
+    <script src="script.js?v=20260601-1640"></script>
 </body>
 </html>

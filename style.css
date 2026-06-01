@@ -63,6 +63,10 @@ h2 {
     grid-template-columns: repeat(2, 1fr);
 }
 
+.contagem-grid {
+    grid-template-columns: 1fr 160px;
+}
+
 label {
     display: block;
     margin: 8px 0 5px;
@@ -219,9 +223,9 @@ li {
 }
 
 .lista-admin li {
-    display: flex;
+    display: grid;
+    grid-template-columns: 1fr auto auto;
     align-items: center;
-    justify-content: space-between;
     gap: 10px;
 }
 
@@ -231,6 +235,10 @@ li {
     margin: 0;
     padding: 6px 10px;
     background-color: #c0392b;
+}
+
+.lista-admin button.perigo {
+    background-color: #8e241b;
 }
 
 .grafico-container {
@@ -297,6 +305,7 @@ li {
     }
 
     .linha-form,
+    .contagem-grid,
     .relatorio-grid,
     .relatorio-grid-operador,
     .resumo,
@@ -307,6 +316,10 @@ li {
     button {
         width: 100%;
         margin-right: 0;
+    }
+
+    .lista-admin li {
+        grid-template-columns: 1fr;
     }
 
     .container {

@@ -12,6 +12,7 @@ const db = firebase.firestore();
 const colecao = db.collection("patrimonios");
 const divergenciasColecao = db.collection("divergencias");
 const transferenciasColecao = db.collection("transferencias");
+const contagensColecao = db.collection("contagens");
 const configSessoesRef = db.collection("configuracoes").doc("sessoes");
 const configLocaisRef = db.collection("configuracoes").doc("locais");
 const PREFIXO_SEGURANCA_PATRIMONIO = "67";
@@ -51,6 +52,7 @@ function iniciarSistema() {
     document.getElementById("btnAbrirScanner").addEventListener("click", abrirScanner);
     document.getElementById("btnPararScanner").addEventListener("click", pararScanner);
     document.getElementById("btnExportarRelatorioOperador").addEventListener("click", exportarRelatorioOperador);
+    document.getElementById("btnRegistrarContagem").addEventListener("click", registrarContagemSemLeitura);
 
     document.getElementById("campopatrimonio").addEventListener("keydown", evento => {
         if (evento.key === "Enter") buscarpatrimonio();
@@ -724,6 +726,8 @@ async function exportarRelatorioOperador() {
 
         const relatorio = tipo === "transferencias"
             ? await montarRelatorioTransferenciasOperador(sessao, local, abrangencia)
+            : tipo === "contagens"
+                ? await montarRelatorioContagensOperador(sessao, local, abrangencia)
             : await montarRelatorioPatrimoniosOperador(sessao, local, abrangencia, tipo);
 
         if (!relatorio.linhas.length) {
@@ -736,6 +740,59 @@ async function exportarRelatorioOperador() {
     } catch (erro) {
         console.error(erro);
         mostrarMensagem("mensagemRelatorioOperador", "Erro ao gerar o relatório.", "erro");
+    }
+}
+
+async function registrarContagemSemLeitura() {
+    const sessao = getSessaoAtual();
+    const local = getLocalAtual();
+    const responsavel = document.getElementById("campoUsuario").value.trim();
+    const tipo = normalizarTexto(document.getElementById("tipoItemContagem").value);
+    const quantidade = Number(document.getElementById("quantidadeContagem").value);
+    const observacao = normalizarTexto(document.getElementById("observacaoContagem").value);
+
+    if (!sessao || !local) {
+        mostrarMensagem("mensagemContagem", "Selecione a lotação e o local antes de registrar.", "erro");
+        return;
+    }
+
+    if (!responsavel) {
+        mostrarMensagem("mensagemContagem", "Digite o nome do responsável.", "erro");
+        document.getElementById("campoUsuario").focus();
+        return;
+    }
+
+    if (!tipo) {
+        mostrarMensagem("mensagemContagem", "Informe o tipo do item.", "erro");
+        document.getElementById("tipoItemContagem").focus();
+        return;
+    }
+
+    if (!Number.isInteger(quantidade) || quantidade < 1) {
+        mostrarMensagem("mensagemContagem", "Informe uma quantidade válida.", "erro");
+        document.getElementById("quantidadeContagem").focus();
+        return;
+    }
+
+    try {
+        await contagensColecao.add({
+            sessao,
+            local,
+            tipo,
+            quantidade,
+            observacao,
+            responsavel,
+            motivo: "Contagem visual sem leitura de patrimônio.",
+            criadoEm: firebase.firestore.FieldValue.serverTimestamp()
+        });
+
+        document.getElementById("tipoItemContagem").value = "";
+        document.getElementById("quantidadeContagem").value = "";
+        document.getElementById("observacaoContagem").value = "";
+        mostrarMensagem("mensagemContagem", "Contagem registrada.", "sucesso");
+    } catch (erro) {
+        console.error(erro);
+        mostrarMensagem("mensagemContagem", "Erro ao registrar a contagem.", "erro");
     }
 }
 
@@ -806,6 +863,31 @@ async function montarRelatorioTransferenciasOperador(sessao, local, abrangencia)
             "Responsável": item.responsavel || "",
             "Data da leitura": formatarData(item.ultimaLeituraEm || item.primeiraLeituraEm),
             "Situação": item.status || "Transferência pendente"
+        }))
+    };
+}
+
+async function montarRelatorioContagensOperador(sessao, local, abrangencia) {
+    const snapshot = await contagensColecao.where("sessao", "==", sessao).get();
+    let itens = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+    if (abrangencia === "local") {
+        itens = itens.filter(item => item.local === local);
+    }
+
+    itens.sort((a, b) => dataParaMillis(b.criadoEm) - dataParaMillis(a.criadoEm));
+
+    return {
+        nome: `Contagem sem leitura - ${sessao}`,
+        colunas: ["Lotação", "Local", "Tipo do item", "Quantidade", "Observação", "Responsável", "Data"],
+        linhas: itens.map(item => ({
+            "Lotação": item.sessao || "",
+            "Local": item.local || "",
+            "Tipo do item": item.tipo || "",
+            "Quantidade": item.quantidade || "",
+            "Observação": item.observacao || "",
+            "Responsável": item.responsavel || "",
+            "Data": formatarData(item.criadoEm)
         }))
     };
 }
