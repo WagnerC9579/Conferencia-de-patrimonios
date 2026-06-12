@@ -12,24 +12,17 @@ const db = firebase.firestore();
 const colecao = db.collection("patrimonios");
 const divergenciasColecao = db.collection("divergencias");
 const transferenciasColecao = db.collection("transferencias");
+const naoCadastradosColecao = db.collection("naoCadastrados");
 const contagensColecao = db.collection("contagens");
 const configSessoesRef = db.collection("configuracoes").doc("sessoes");
 const configLocaisRef = db.collection("configuracoes").doc("locais");
 const PREFIXO_SEGURANCA_PATRIMONIO = "67";
+const CHAVE_ESTADO_OPERADOR = "inventarioPatrimonial.estadoOperador";
 
 const ESTRUTURA_TRE_PADRAO = {
-    NSEIS: [
-        "ADM",
-        "SEDE",
-        "MOZARD",
-        "BERNARDO MASCARENHAS",
-        "JOSAFÁ BELO",
-        "SALA BOMBEIROS (320)",
-        "PORTARIA E ANDARES(320)",
-        "CENTRO DE APOIO"
-    ],
-    "334ZE": ["334ZE"],
-    "038ZE": ["038ZE"]
+    NSEIS: [],
+    "334ZE": [],
+    "038ZE": []
 };
 
 let ESTRUTURA_TRE = { ...ESTRUTURA_TRE_PADRAO };
@@ -42,12 +35,28 @@ let localAtivoFiltro = "";
 let locaisPorSessao = {};
 let listenerSessoesAtivo = null;
 let listenerLocaisAtivo = null;
+let estadoOperador = carregarEstadoOperador();
 
 document.addEventListener("DOMContentLoaded", iniciarSistema);
 
 function iniciarSistema() {
-    document.getElementById("selectSessao").addEventListener("change", verificarFluxoSessao);
-    document.getElementById("selectLocal").addEventListener("change", ativarMonitoramentoFiltro);
+    const selectSessao = document.getElementById("selectSessao");
+    const selectLocal = document.getElementById("selectLocal");
+    const campoUsuario = document.getElementById("campoUsuario");
+
+    campoUsuario.value = estadoOperador.usuario || "";
+
+    selectSessao.addEventListener("change", () => {
+        verificarFluxoSessao();
+        salvarEstadoOperador();
+    });
+
+    selectLocal.addEventListener("change", () => {
+        ativarMonitoramentoFiltro();
+        salvarEstadoOperador();
+    });
+
+    campoUsuario.addEventListener("input", salvarEstadoOperador);
     document.getElementById("btnConferir").addEventListener("click", buscarpatrimonio);
     document.getElementById("btnAbrirScanner").addEventListener("click", abrirScanner);
     document.getElementById("btnPararScanner").addEventListener("click", pararScanner);
@@ -83,7 +92,7 @@ function iniciarMonitoramentoSessoes() {
 
 function carregarSessoesDoMapa() {
     const selectSessao = document.getElementById("selectSessao");
-    const sessaoSelecionada = selectSessao.value;
+    const sessaoSelecionada = selectSessao.value || estadoOperador.sessao;
     selectSessao.innerHTML = '<option value="" disabled selected>Escolha a lotação...</option>';
 
     Object.keys(ESTRUTURA_TRE).forEach(sessao => {
@@ -96,7 +105,6 @@ function carregarSessoesDoMapa() {
     if (sessaoSelecionada && ESTRUTURA_TRE[sessaoSelecionada]) {
         selectSessao.value = sessaoSelecionada;
     }
-
 }
 
 function aplicarSessoesConfiguradas(lista) {
@@ -161,6 +169,12 @@ function verificarFluxoSessao() {
     localAtivoFiltro = "";
     selectLocal.innerHTML = '<option value="" disabled selected>Escolha o local...</option>';
 
+    if (!locaisDisponiveis.length) {
+        blocoLocal.style.display = "none";
+        limparTelaResumo();
+        return;
+    }
+
     if (locaisDisponiveis.length > 1) {
         locaisDisponiveis.forEach(local => {
             const opt = document.createElement("option");
@@ -168,13 +182,20 @@ function verificarFluxoSessao() {
             opt.textContent = local;
             selectLocal.appendChild(opt);
         });
+
         blocoLocal.style.display = "block";
-        limparTelaResumo();
+
+        if (estadoOperador.sessao === sessaoSel && estadoOperador.local && locaisDisponiveis.includes(estadoOperador.local)) {
+            selectLocal.value = estadoOperador.local;
+            ativarMonitoramentoFiltro();
+        } else {
+            limparTelaResumo();
+        }
         return;
     }
 
     blocoLocal.style.display = "none";
-    localAtivoFiltro = locaisDisponiveis[0] || "";
+    localAtivoFiltro = locaisDisponiveis[0];
     ativarMonitoramentoFiltro();
 }
 
@@ -193,6 +214,7 @@ function getLocalAtual() {
 function ativarMonitoramentoFiltro() {
     const sessaoSel = getSessaoAtual();
     localAtivoFiltro = getLocalAtual();
+    salvarEstadoOperador();
 
     if (!sessaoSel || !localAtivoFiltro) return;
 
@@ -299,21 +321,20 @@ async function buscarpatrimonio() {
             if (encontradoEmOutroLocal) {
                 await registrarTransferencia(num, numSemPrefixo, encontradoEmOutroLocal, sessaoSel, localSel, user);
                 vibrar();
-                mostrarMensagem(
-                    "mensagem",
-                    `Patrimônio cadastrado em ${encontradoEmOutroLocal.dados.sessao} / ${encontradoEmOutroLocal.dados.local}. Registrado para transferência.`,
+                mostrarStatusLeitura(
+                    `Patrimônio em outro local: ${encontradoEmOutroLocal.dados.sessao} / ${encontradoEmOutroLocal.dados.local}. Registrado para transferência.`,
                     "aviso"
                 );
                 return;
             }
 
-            await registrarDivergencia(num, numSemPrefixo, sessaoSel, localSel, user);
-            mostrarMensagem("mensagem", `Patrimônio ${numSemPrefixo} não localizado no banco.`, "erro");
+            await registrarNaoCadastrado(num, numSemPrefixo, sessaoSel, localSel, user);
+            mostrarStatusLeitura(`Patrimônio ${numSemPrefixo} não consta na base.`, "erro");
             return;
         }
 
         if (encontrado.dados.status === "conferido") {
-            mostrarMensagem("mensagem", `Patrimônio ${num} já estava conferido.`, "aviso");
+            mostrarStatusLeitura(`Patrimônio ${encontrado.dados.numero || num} já estava conferido.`, "aviso");
             return;
         }
 
@@ -324,12 +345,14 @@ async function buscarpatrimonio() {
         });
 
         vibrar();
-        mostrarMensagem("mensagem", `Código ${encontrado.dados.numero} conferido por ${user}.`, "sucesso");
+        mostrarStatusLeitura(`Patrimônio ${encontrado.dados.numero} conferido por ${user}.`, "sucesso");
     } catch (erro) {
         console.error(erro);
         mostrarMensagem("mensagem", "Erro ao conferir o patrimônio.", "erro");
     } finally {
-        document.getElementById("campopatrimonio").value = "";
+        const campoPatrimonio = document.getElementById("campopatrimonio");
+        campoPatrimonio.value = "";
+        campoPatrimonio.focus();
     }
 }
 
@@ -411,6 +434,27 @@ async function registrarDivergencia(numero, numeroSemPrefixo, sessao, local, usu
         motivo: "Patrimônio não localizado na lotação/local selecionado.",
         criadoEm: firebase.firestore.FieldValue.serverTimestamp()
     });
+}
+
+async function registrarNaoCadastrado(numeroInformado, numeroSemPrefixo, sessao, local, usuario) {
+    const id = criarIdNaoCadastrado(sessao, local, numeroSemPrefixo || numeroInformado);
+    const ref = naoCadastradosColecao.doc(id);
+    const existente = await ref.get();
+
+    await ref.set({
+        numeroInformado,
+        numeroSemPrefixo,
+        sessao,
+        local,
+        usuario,
+        status: "Não consta na base",
+        motivo: "Patrimônio lido no local, mas não encontrado em nenhuma planilha importada.",
+        primeiraLeituraEm: existente.exists && existente.data().primeiraLeituraEm
+            ? existente.data().primeiraLeituraEm
+            : firebase.firestore.FieldValue.serverTimestamp(),
+        ultimaLeituraEm: firebase.firestore.FieldValue.serverTimestamp(),
+        leituras: firebase.firestore.FieldValue.increment(1)
+    }, { merge: true });
 }
 
 async function registrarTransferencia(numeroInformado, numeroSemPrefixo, encontrado, sessaoEncontrada, localEncontrado, usuario) {
@@ -726,6 +770,8 @@ async function exportarRelatorioOperador() {
 
         const relatorio = tipo === "transferencias"
             ? await montarRelatorioTransferenciasOperador(sessao, local, abrangencia)
+            : tipo === "naoCadastrados"
+                ? await montarRelatorioNaoCadastradosOperador(sessao, local, abrangencia)
             : tipo === "contagens"
                 ? await montarRelatorioContagensOperador(sessao, local, abrangencia)
             : await montarRelatorioPatrimoniosOperador(sessao, local, abrangencia, tipo);
@@ -867,6 +913,31 @@ async function montarRelatorioTransferenciasOperador(sessao, local, abrangencia)
     };
 }
 
+async function montarRelatorioNaoCadastradosOperador(sessao, local, abrangencia) {
+    const snapshot = await naoCadastradosColecao.where("sessao", "==", sessao).get();
+    let itens = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+    if (abrangencia === "local") {
+        itens = itens.filter(item => item.local === local);
+    }
+
+    itens.sort((a, b) => dataParaMillis(b.ultimaLeituraEm || b.primeiraLeituraEm) - dataParaMillis(a.ultimaLeituraEm || a.primeiraLeituraEm));
+
+    return {
+        nome: `Não consta na base - ${sessao}`,
+        colunas: ["Lotação", "Local", "Patrimônio informado", "Sem prefixo 67", "Responsável", "Data da leitura", "Situação"],
+        linhas: itens.map(item => ({
+            "Lotação": item.sessao || "",
+            "Local": item.local || "",
+            "Patrimônio informado": item.numeroInformado || "",
+            "Sem prefixo 67": item.numeroSemPrefixo || "",
+            "Responsável": item.usuario || "",
+            "Data da leitura": formatarData(item.ultimaLeituraEm || item.primeiraLeituraEm),
+            "Situação": item.status || "Não consta na base"
+        }))
+    };
+}
+
 async function montarRelatorioContagensOperador(sessao, local, abrangencia) {
     const snapshot = await contagensColecao.where("sessao", "==", sessao).get();
     let itens = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -999,6 +1070,12 @@ function criarIdItem(sessao, local, numero) {
         .join("__");
 }
 
+function criarIdNaoCadastrado(sessao, local, numero) {
+    return [sessao, local, somenteDigitos(numero)]
+        .map(parte => normalizarChaveLocal(parte).replace(/[^a-z0-9]+/g, "-"))
+        .join("__");
+}
+
 function criarIdTransferencia(lotacaoCadastrada, localCadastrado, lotacaoEncontrada, localEncontrado, numero) {
     return [lotacaoCadastrada, localCadastrado, lotacaoEncontrada, localEncontrado, somenteDigitos(numero)]
         .map(parte => normalizarChaveLocal(parte).replace(/[^a-z0-9]+/g, "-"))
@@ -1007,6 +1084,32 @@ function criarIdTransferencia(lotacaoCadastrada, localCadastrado, lotacaoEncontr
 
 function normalizarNomeArquivo(valor) {
     return normalizarChave(valor).replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "relatorio";
+}
+
+function carregarEstadoOperador() {
+    try {
+        return JSON.parse(localStorage.getItem(CHAVE_ESTADO_OPERADOR)) || {};
+    } catch (erro) {
+        return {};
+    }
+}
+
+function salvarEstadoOperador() {
+    const estado = {
+        usuario: document.getElementById("campoUsuario")?.value.trim() || "",
+        sessao: getSessaoAtual(),
+        local: getLocalAtual()
+    };
+
+    estadoOperador = estado;
+    localStorage.setItem(CHAVE_ESTADO_OPERADOR, JSON.stringify(estado));
+}
+
+function mostrarStatusLeitura(texto, tipo) {
+    const status = document.getElementById("statusLeitura");
+    if (!status) return;
+    status.textContent = texto;
+    status.className = `mensagem status-leitura ${tipo}`;
 }
 
 function vibrar() {

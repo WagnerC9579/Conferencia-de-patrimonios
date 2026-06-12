@@ -1,4 +1,4 @@
-* {
+﻿* {
     box-sizing: border-box;
 }
 
@@ -151,6 +151,14 @@ button.perigo:hover {
 
 .aviso {
     color: #9a6513;
+}
+.status-leitura {
+    text-align: left;
+    margin-top: 8px;
+}
+
+.status-leitura:empty {
+    display: none;
 }
 
 #blocoLocalColeta {
@@ -365,3 +373,5 @@ li {
         margin-top: 10px;
     }
 }
+
+
