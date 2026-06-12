@@ -1,4 +1,4 @@
-const firebaseConfig = {
+﻿const firebaseConfig = {
     apiKey: "AIzaSyBatvliROS57Vi0zWgEe24PoK7F3XamhgI",
     authDomain: "inventario-patrimonio.firebaseapp.com",
     projectId: "inventario-patrimonio",
@@ -18,6 +18,7 @@ const configSessoesRef = db.collection("configuracoes").doc("sessoes");
 const configLocaisRef = db.collection("configuracoes").doc("locais");
 const PREFIXO_SEGURANCA_PATRIMONIO = "67";
 const CHAVE_ESTADO_OPERADOR = "inventarioPatrimonial.estadoOperador";
+
 
 const ESTRUTURA_TRE_PADRAO = {
     NSEIS: [],
@@ -321,20 +322,17 @@ async function buscarpatrimonio() {
             if (encontradoEmOutroLocal) {
                 await registrarTransferencia(num, numSemPrefixo, encontradoEmOutroLocal, sessaoSel, localSel, user);
                 vibrar();
-                mostrarStatusLeitura(
-                    `Patrimônio em outro local: ${encontradoEmOutroLocal.dados.sessao} / ${encontradoEmOutroLocal.dados.local}. Registrado para transferência.`,
-                    "aviso"
-                );
+                mostrarStatusLeitura(`Fora do local: ${encontradoEmOutroLocal.dados.numero || numSemPrefixo}`, "aviso");
                 return;
             }
 
             await registrarNaoCadastrado(num, numSemPrefixo, sessaoSel, localSel, user);
-            mostrarStatusLeitura(`Patrimônio ${numSemPrefixo} não consta na base.`, "erro");
+            mostrarStatusLeitura(`Não consta: ${numSemPrefixo}`, "erro");
             return;
         }
 
         if (encontrado.dados.status === "conferido") {
-            mostrarStatusLeitura(`Patrimônio ${encontrado.dados.numero || num} já estava conferido.`, "aviso");
+            mostrarStatusLeitura(`Já conferido: ${encontrado.dados.numero || numSemPrefixo}`, "aviso");
             return;
         }
 
@@ -345,7 +343,7 @@ async function buscarpatrimonio() {
         });
 
         vibrar();
-        mostrarStatusLeitura(`Patrimônio ${encontrado.dados.numero} conferido por ${user}.`, "sucesso");
+        mostrarStatusLeitura(`Conferido: ${encontrado.dados.numero}`, "sucesso");
     } catch (erro) {
         console.error(erro);
         mostrarMensagem("mensagem", "Erro ao conferir o patrimônio.", "erro");
@@ -685,8 +683,21 @@ async function ajustarCameraParaLeituraPerto() {
 async function processarCodigoScanner(codigo) {
     if (scannerTravado) return;
 
+    const numeroLido = somenteDigitos(codigo);
+    const numeroSemPrefixo = removerPrefixoSegurancaPatrimonio(numeroLido);
+
+    if (!leituraCameraCompleta(numeroLido)) {
+        scannerTravado = true;
+        mostrarStatusLeitura("Leitura incompleta", "aviso");
+
+        setTimeout(() => {
+            scannerTravado = false;
+        }, 1200);
+        return;
+    }
+
     scannerTravado = true;
-    document.getElementById("campopatrimonio").value = codigo;
+    document.getElementById("campopatrimonio").value = numeroSemPrefixo;
     await buscarpatrimonio();
 
     setTimeout(() => {
@@ -1012,6 +1023,11 @@ function removerPrefixoSegurancaPatrimonio(valor) {
     return numero;
 }
 
+function leituraCameraCompleta(valor) {
+    const numero = somenteDigitos(valor);
+    return numero.startsWith(PREFIXO_SEGURANCA_PATRIMONIO) && numero.length > PREFIXO_SEGURANCA_PATRIMONIO.length;
+}
+
 function gerarNumerosBuscaPatrimonio(valor) {
     const numero = somenteDigitos(valor);
     const semPrefixo = removerPrefixoSegurancaPatrimonio(numero);
@@ -1121,3 +1137,6 @@ function mostrarMensagem(id, texto, tipo) {
     msg.textContent = texto;
     msg.className = `mensagem ${tipo}`;
 }
+
+
+
