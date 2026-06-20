@@ -396,6 +396,11 @@ async function buscarpatrimonio(opcoes = {}) {
             const encontradoEmOutroLocal = await localizarPatrimonioEmTodoBanco(num, sessaoSel, localSel);
 
             if (encontradoEmOutroLocal) {
+                if (encontradoEmOutroLocal.dados.status === "conferido") {
+                    mostrarStatusLeitura(`Repetido: ${encontradoEmOutroLocal.dados.numero || numSemPrefixo}`, "aviso");
+                    return;
+                }
+
                 await registrarTransferencia(num, numSemPrefixo, encontradoEmOutroLocal, sessaoSel, localSel, user);
                 vibrar();
                 mostrarStatusLeitura(`Transferir: ${encontradoEmOutroLocal.dados.numero || numSemPrefixo}`, "aviso");
@@ -1303,6 +1308,7 @@ function mostrarMensagem(id, texto, tipo) {
     msg.textContent = texto;
     msg.className = `mensagem ${tipo}`;
 }
+
 
 
 
