@@ -8,54 +8,88 @@
 
     <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore-compat.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://unpkg.com/html5-qrcode"></script>
 </head>
 
 <body>
-    <main class="container">
-        <h1>Inventário patrimonial</h1>
+    <main class="container tela-operador">
+        <header class="topo-operador">
+            <h1>Inventário patrimonial</h1>
+            <span class="status-desktop">Acompanhamento em tempo real</span>
+        </header>
 
-        <section class="box">
-            <h2>Localização da conferência</h2>
+        <section class="localizacao-operador" aria-label="Localização da conferência">
+            <h2>Localização</h2>
+            <div class="localizacao-grid">
+                <label for="selectSessao">Lotação
+                    <select id="selectSessao">
+                        <option value="" disabled selected>Escolha a lotação...</option>
+                    </select>
+                </label>
 
-            <label for="selectSessao">1. Selecione sua lotação</label>
-            <select id="selectSessao">
-                <option value="" disabled selected>Escolha a lotação...</option>
-            </select>
+                <div id="blocoLocalColeta">
+                    <label for="selectLocal">Local de coleta
+                        <select id="selectLocal">
+                            <option value="" disabled selected>Escolha o local...</option>
+                        </select>
+                    </label>
+                </div>
 
-            <div id="blocoLocalColeta">
-                <label for="selectLocal">2. Selecione o local de coleta</label>
-                <select id="selectLocal">
-                    <option value="" disabled selected>Escolha o local...</option>
-                </select>
+                <label for="campoUsuario" class="campo-responsavel">Responsável
+                    <input type="text" id="campoUsuario" placeholder="Digite seu nome" autocomplete="name">
+                </label>
             </div>
         </section>
 
-        <section class="box">
-            <h2>Conferência</h2>
+        <section class="andamento-desktop" aria-label="Andamento da conferência">
+            <h2>Andamento</h2>
+            <div class="andamento-linhas">
+                <div class="linha-andamento local">
+                    <div id="nomeLocalAndamento" class="nome-linha">Local</div>
+                    <div class="dado"><strong id="total">0</strong><span>Total</span></div>
+                    <div class="dado"><strong id="conferidostotal">0</strong><span>Conferidos</span></div>
+                    <div class="dado"><strong id="pendentestotal">0</strong><span>Pendentes</span></div>
+                    <div class="dado"><strong id="percentualLocal">0%</strong><span>Local</span><div class="barra-progresso"><div id="barraLocal"></div></div></div>
+                </div>
+                <div class="linha-andamento">
+                    <div id="nomeLotacaoAndamento" class="nome-linha">Lotação</div>
+                    <div class="dado"><strong id="lotacaoTotal">0</strong><span>Total</span></div>
+                    <div class="dado"><strong id="lotacaoConferidos">0</strong><span>Conferidos</span></div>
+                    <div class="dado"><strong id="lotacaoPendentes">0</strong><span>Pendentes</span></div>
+                    <div class="dado"><strong id="percentualLotacao">0%</strong><span>Lotação</span><div class="barra-progresso"><div id="barraLotacao"></div></div></div>
+                </div>
+            </div>
+        </section>
 
-            <label for="campoUsuario">Responsável</label>
-            <input type="text" id="campoUsuario" placeholder="Digite seu nome" autocomplete="name">
+        <section class="box conferencia-operador">
+            <h2>Leitura</h2>
 
-            <label for="campopatrimonio">Patrimônio</label>
-            <input type="text" id="campopatrimonio" placeholder="Digite ou escaneie o patrimônio" inputmode="numeric">
+            <div class="scanner-mobile">
+                <button id="btnAbrirScanner" type="button">Iniciar leitura</button>
+
+                <div id="scannerArea" class="scanner-area">
+                    <button id="btnPararScanner" type="button" class="fechar-camera" aria-label="Fechar câmera">×</button>
+                    <div id="reader"></div>
+                </div>
+
+                <p id="statusLeitura" class="mensagem status-leitura"></p>
+            </div>
+
+            <details id="conferenciaManual" class="conferencia-manual">
+                <summary>Digitar manualmente</summary>
+
+                <label for="campopatrimonio">Patrimônio</label>
+                <input type="text" id="campopatrimonio" placeholder="Digite o patrimônio" inputmode="numeric">
+
+                <button id="btnConferir" type="button">Conferir</button>
+            </details>
 
             <p id="mensagem" class="mensagem"></p>
-
-            <button id="btnConferir" type="button">Conferir manual</button>
-
-            <div class="scanner-acoes">
-                <button id="btnAbrirScanner" type="button">Iniciar leitura</button>
-                <button id="btnPararScanner" type="button" class="perigo">Parar leitura</button>
-            </div>
-
-            <div id="reader"></div>
-            <p id="statusLeitura" class="mensagem status-leitura"></p>
         </section>
 
-        <section class="box">
+        <section class="box contagem-operador">
             <details>
                 <summary>Contagem sem leitura</summary>
 
@@ -81,64 +115,48 @@
             </details>
         </section>
 
-        <section class="box">
-            <h2 id="tituloResumo">Resumo da unidade</h2>
-            <div class="resumo">
-                <p id="total">Total: 0</p>
-                <p id="pendentestotal">Pendentes: 0</p>
-                <p id="conferidostotal">Conferidos: 0</p>
+        <section class="painel-principal-operador">
+            <div class="box grafico-desktop">
+                <h2 id="tituloResumo">Progresso do local</h2>
+                <div class="grafico-container">
+                    <canvas id="graficopatrimonio"></canvas>
+                </div>
             </div>
 
-            <details open>
-                <summary>Pendentes</summary>
-                <ul id="listapatrimonios"></ul>
-            </details>
+            <div class="listas-operador">
+                <details open>
+                    <summary id="summaryPendentes">Pendentes</summary>
+                    <ul id="listapatrimonios"></ul>
+                </details>
 
-            <details>
-                <summary>Conferidos</summary>
-                <ul id="listaconferidos"></ul>
-            </details>
-
-            <div class="grafico-container">
-                <canvas id="graficopatrimonio"></canvas>
+                <details>
+                    <summary id="summaryConferidos">Conferidos</summary>
+                    <ul id="listaconferidos"></ul>
+                </details>
             </div>
         </section>
 
-        <section id="relatoriosOperador" class="box area-relatorios relatorio-operador">
-            <h2>Relatórios</h2>
+        <section class="rodape-operador"><details id="relatoriosOperador" class="area-relatorios relatorio-operador">
+                <summary>Relatórios</summary>
+                <div class="corpo-recolhido">
+                    <input type="hidden" id="tipoRelatorioOperador" value="todos">
 
-            <div class="linha-form relatorio-grid-operador">
-                <label for="tipoRelatorioOperador">
-                    Tipo de relatório
-                    <select id="tipoRelatorioOperador">
-                        <option value="pendentes">Pendentes</option>
-                        <option value="conferidos">Conferidos</option>
-                        <option value="todos">Todos</option>
-                        <option value="transferencias">Itens a transferir</option>
-                        <option value="naoCadastrados">Não consta na base</option>
-                        <option value="contagens">Contagem sem leitura</option>
-                    </select>
-                </label>
+                    <label for="abrangenciaRelatorioOperador">
+                        Abrangência
+                        <select id="abrangenciaRelatorioOperador">
+                            <option value="local">Apenas este local</option>
+                            <option value="lotacao">Toda a lotação</option>
+                        </select>
+                    </label>
 
-                <label for="abrangenciaRelatorioOperador">
-                    Abrangência
-                    <select id="abrangenciaRelatorioOperador">
-                        <option value="local">Apenas este local</option>
-                        <option value="lotacao">Toda a lotação</option>
-                    </select>
-                </label>
-            </div>
-
-            <button id="btnExportarRelatorioOperador" type="button">Exportar Excel</button>
-            <p id="mensagemRelatorioOperador" class="mensagem"></p>
+                    <button id="btnExportarRelatorioOperador" type="button">Gerar relatório geral</button>
+                    <p id="mensagemRelatorioOperador" class="mensagem"></p>
+                </div>
+            </details>
         </section>
     </main>
 
-    <script src="script.js?v=20260612-1130"></script>
+    <script src="script.js?v=20260619-2305"></script>
 </body>
 </html>
-
-
-
-
 

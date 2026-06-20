@@ -30,6 +30,7 @@ let ESTRUTURA_TRE = { ...ESTRUTURA_TRE_PADRAO };
 
 let grafico = null;
 let listenerAtivo = null;
+let listenerLotacaoAtivo = null;
 let scanner = null;
 let scannerTravado = false;
 let localAtivoFiltro = "";
@@ -46,6 +47,7 @@ function iniciarSistema() {
     const campoUsuario = document.getElementById("campoUsuario");
 
     campoUsuario.value = estadoOperador.usuario || "";
+    ajustarConferenciaPorDispositivo();
 
     selectSessao.addEventListener("change", () => {
         verificarFluxoSessao();
@@ -72,6 +74,11 @@ function iniciarSistema() {
     iniciarMonitoramentoLocais();
 }
 
+function ajustarConferenciaPorDispositivo() {
+    const detalhes = document.getElementById("conferenciaManual");
+    if (!detalhes) return;
+    detalhes.open = false;
+}
 function iniciarMonitoramentoSessoes() {
     if (listenerSessoesAtivo) listenerSessoesAtivo();
 
@@ -219,7 +226,9 @@ function ativarMonitoramentoFiltro() {
 
     if (!sessaoSel || !localAtivoFiltro) return;
 
-    document.getElementById("tituloResumo").textContent = `Resumo: ${sessaoSel} (${localAtivoFiltro})`;
+    document.getElementById("tituloResumo").textContent = `Progresso do local: ${localAtivoFiltro}`;
+    atualizarRotulosAndamento(sessaoSel, localAtivoFiltro);
+    ativarMonitoramentoLotacao(sessaoSel);
 
     if (listenerAtivo) listenerAtivo();
 
@@ -250,21 +259,87 @@ function ativarMonitoramentoFiltro() {
 
 function limparTelaResumo() {
     atualizarTela([], []);
-    document.getElementById("tituloResumo").textContent = "Resumo da unidade";
+    atualizarResumoLotacao([], []);
+    document.getElementById("tituloResumo").textContent = "Progresso do local";
+    atualizarRotulosAndamento(getSessaoAtual() || "Lotação", getLocalAtual() || "Local");
 }
 
 function atualizarTela(pendentes, conferidos) {
     const total = pendentes.length + conferidos.length;
+    const percentual = calcularPercentual(conferidos.length, total);
 
-    document.getElementById("total").textContent = `Total: ${total}`;
-    document.getElementById("pendentestotal").textContent = `Pendentes: ${pendentes.length}`;
-    document.getElementById("conferidostotal").textContent = `Conferidos: ${conferidos.length}`;
+    atualizarTexto("total", total);
+    atualizarTexto("pendentestotal", pendentes.length);
+    atualizarTexto("conferidostotal", conferidos.length);
+    atualizarTexto("percentualLocal", `${percentual}%`);
+    atualizarBarra("barraLocal", percentual);
+    atualizarTexto("summaryPendentes", `Pendentes (${pendentes.length})`);
+    atualizarTexto("summaryConferidos", `Conferidos (${conferidos.length})`);
 
     render("listapatrimonios", pendentes, false);
     render("listaconferidos", conferidos, true);
     atualizarGrafico(pendentes.length, conferidos.length);
 }
 
+function ativarMonitoramentoLotacao(sessaoSel) {
+    if (listenerLotacaoAtivo) listenerLotacaoAtivo();
+
+    if (!sessaoSel) {
+        atualizarResumoLotacao([], []);
+        return;
+    }
+
+    listenerLotacaoAtivo = colecao
+        .where("sessao", "==", sessaoSel)
+        .onSnapshot(snapshot => {
+            const pendentes = [];
+            const conferidos = [];
+
+            snapshot.forEach(doc => {
+                const item = { id: doc.id, ...doc.data() };
+                if (item.status === "conferido") {
+                    conferidos.push(item);
+                } else {
+                    pendentes.push(item);
+                }
+            });
+
+            atualizarResumoLotacao(pendentes, conferidos);
+        }, erro => {
+            console.error(erro);
+        });
+}
+
+function atualizarResumoLotacao(pendentes, conferidos) {
+    const total = pendentes.length + conferidos.length;
+    const percentual = calcularPercentual(conferidos.length, total);
+
+    atualizarTexto("lotacaoTotal", total);
+    atualizarTexto("lotacaoPendentes", pendentes.length);
+    atualizarTexto("lotacaoConferidos", conferidos.length);
+    atualizarTexto("percentualLotacao", `${percentual}%`);
+    atualizarBarra("barraLotacao", percentual);
+}
+
+function atualizarRotulosAndamento(sessao, local) {
+    atualizarTexto("nomeLotacaoAndamento", sessao || "Lotação");
+    atualizarTexto("nomeLocalAndamento", local || "Local");
+}
+
+function calcularPercentual(valor, total) {
+    if (!total) return 0;
+    return Math.round((valor / total) * 100);
+}
+
+function atualizarTexto(id, texto) {
+    const elemento = document.getElementById(id);
+    if (elemento) elemento.textContent = texto;
+}
+
+function atualizarBarra(id, percentual) {
+    const elemento = document.getElementById(id);
+    if (elemento) elemento.style.width = `${percentual}%`;
+}
 function render(id, lista, showUser) {
     const ul = document.getElementById(id);
     ul.innerHTML = "";
@@ -279,9 +354,9 @@ function render(id, lista, showUser) {
     lista.forEach(item => {
         const li = document.createElement("li");
         const partes = [
-            item.patAntigo ? `Antigo: ${item.patAntigo}` : "",
+            (item.patrimonioAntigo || item.patAntigo) ? `Antigo: ${item.patrimonioAntigo || item.patAntigo}` : "",
             item.descricao || "Sem descrição",
-            item.marca ? `Marca: ${item.marca}` : "",
+            (item.modelo || item.marca) ? `Marca: ${item.modelo || item.marca}` : "",
             showUser && item.usuario ? `Responsável: ${item.usuario}` : ""
         ].filter(Boolean);
 
@@ -290,7 +365,8 @@ function render(id, lista, showUser) {
     });
 }
 
-async function buscarpatrimonio() {
+async function buscarpatrimonio(opcoes = {}) {
+    const podeFocarCampos = opcoes.focarCampos !== false;
     const num = somenteDigitos(document.getElementById("campopatrimonio").value);
     const numSemPrefixo = removerPrefixoSegurancaPatrimonio(num);
     const user = document.getElementById("campoUsuario").value.trim();
@@ -299,7 +375,7 @@ async function buscarpatrimonio() {
 
     if (!user) {
         mostrarMensagem("mensagem", "Digite o nome do responsável.", "erro");
-        document.getElementById("campoUsuario").focus();
+        if (podeFocarCampos) document.getElementById("campoUsuario").focus();
         return;
     }
 
@@ -322,17 +398,17 @@ async function buscarpatrimonio() {
             if (encontradoEmOutroLocal) {
                 await registrarTransferencia(num, numSemPrefixo, encontradoEmOutroLocal, sessaoSel, localSel, user);
                 vibrar();
-                mostrarStatusLeitura(`Fora do local: ${encontradoEmOutroLocal.dados.numero || numSemPrefixo}`, "aviso");
+                mostrarStatusLeitura(`Transferir: ${encontradoEmOutroLocal.dados.numero || numSemPrefixo}`, "aviso");
                 return;
             }
 
             await registrarNaoCadastrado(num, numSemPrefixo, sessaoSel, localSel, user);
-            mostrarStatusLeitura(`Não consta: ${numSemPrefixo}`, "erro");
+            mostrarStatusLeitura(`Verificar: ${numSemPrefixo}`, "erro");
             return;
         }
 
         if (encontrado.dados.status === "conferido") {
-            mostrarStatusLeitura(`Já conferido: ${encontrado.dados.numero || numSemPrefixo}`, "aviso");
+            mostrarStatusLeitura(`Repetido: ${encontrado.dados.numero || numSemPrefixo}`, "aviso");
             return;
         }
 
@@ -350,7 +426,7 @@ async function buscarpatrimonio() {
     } finally {
         const campoPatrimonio = document.getElementById("campopatrimonio");
         campoPatrimonio.value = "";
-        campoPatrimonio.focus();
+        if (podeFocarCampos) campoPatrimonio.focus();
     }
 }
 
@@ -380,7 +456,7 @@ async function localizarPatrimonioLegado(numero, sessao, local) {
 
     for (const doc of snapshot.docs) {
         const dados = doc.data();
-        const candidatos = gerarAliasesNumero(dados.numero, dados.patAntigo);
+        const candidatos = gerarAliasesNumero(dados.numero, dados.patrimonioAntigo, dados.patAntigo);
         if (numerosBusca.some(numeroBusca => candidatos.includes(numeroBusca))) {
             return { ref: doc.ref, dados };
         }
@@ -410,7 +486,7 @@ async function localizarPatrimonioEmTodoBanco(numero, sessaoAtual, localAtual) {
 
     for (const doc of candidatos) {
         const dados = doc.data();
-        const aliases = gerarAliasesNumero(dados.numero, dados.patAntigo);
+        const aliases = gerarAliasesNumero(dados.numero, dados.patrimonioAntigo, dados.patAntigo);
         const mesmoNumero = numerosBusca.some(numeroBusca => aliases.includes(numeroBusca));
         const mesmoLocal = dados.sessao === sessaoAtual && dados.local === localAtual;
 
@@ -465,9 +541,11 @@ async function registrarTransferencia(numeroInformado, numeroSemPrefixo, encontr
         numeroInformado,
         numeroSemPrefixo,
         numero: dados.numero || numeroSemPrefixo,
-        patAntigo: dados.patAntigo || "",
+        patrimonioAntigo: dados.patrimonioAntigo || dados.patAntigo || "",
+        patAntigo: dados.patrimonioAntigo || dados.patAntigo || "",
         descricao: dados.descricao || "",
-        marca: dados.marca || "",
+        modelo: dados.modelo || dados.marca || "",
+        marca: dados.modelo || dados.marca || "",
         lotacaoCadastrada: dados.sessao || "",
         localCadastrado: dados.local || "",
         lotacaoEncontrada: sessaoEncontrada,
@@ -639,9 +717,10 @@ async function pararScannerSilencioso() {
 
 function mostrarAreaScanner(visivel) {
     const reader = document.getElementById("reader");
-    reader.classList.toggle("scanner-visivel", visivel);
+    const area = document.getElementById("scannerArea");
+    if (area) area.classList.toggle("scanner-visivel", visivel);
 
-    if (!visivel) {
+    if (!visivel && reader) {
         reader.innerHTML = "";
     }
 }
@@ -698,7 +777,7 @@ async function processarCodigoScanner(codigo) {
 
     scannerTravado = true;
     document.getElementById("campopatrimonio").value = numeroSemPrefixo;
-    await buscarpatrimonio();
+    await buscarpatrimonio({ focarCampos: false });
 
     setTimeout(() => {
         scannerTravado = false;
@@ -779,6 +858,12 @@ async function exportarRelatorioOperador() {
     try {
         mostrarMensagem("mensagemRelatorioOperador", "Gerando relatório...", "aviso");
 
+        if (tipo === "todos") {
+            const totalExportado = await exportarRelatorioGeralOperador(sessao, local, abrangencia);
+            mostrarMensagem("mensagemRelatorioOperador", `Relatório geral exportado com ${totalExportado} registro(s).`, "sucesso");
+            return;
+        }
+
         const relatorio = tipo === "transferencias"
             ? await montarRelatorioTransferenciasOperador(sessao, local, abrangencia)
             : tipo === "naoCadastrados"
@@ -853,6 +938,44 @@ async function registrarContagemSemLeitura() {
     }
 }
 
+async function exportarRelatorioGeralOperador(sessao, local, abrangencia) {
+    const cadastro = await montarRelatorioPatrimoniosOperador(sessao, local, abrangencia, "todos");
+    const pendentes = await montarRelatorioPatrimoniosOperador(sessao, local, abrangencia, "pendentes");
+    const conferidos = await montarRelatorioPatrimoniosOperador(sessao, local, abrangencia, "conferidos");
+    const transferencias = await montarRelatorioTransferenciasOperador(sessao, local, abrangencia);
+    const naoCadastrados = await montarRelatorioNaoCadastradosOperador(sessao, local, abrangencia);
+    const contagens = await montarRelatorioContagensOperador(sessao, local, abrangencia);
+    const quantidadeContagens = contagens.linhas.reduce((total, item) => total + (Number(item["Quantidade"]) || 0), 0);
+
+    const resumo = {
+        nome: "Resumo geral",
+        colunas: ["Indicador", "Quantidade"],
+        linhas: [
+            { "Indicador": "Lotação", "Quantidade": sessao || "Todas" },
+            { "Indicador": "Abrangência", "Quantidade": abrangencia === "local" ? "Apenas este local" : "Toda a lotação" },
+            { "Indicador": "Local", "Quantidade": abrangencia === "local" ? local : "Todos" },
+            { "Indicador": "Total cadastrado na planilha oficial", "Quantidade": cadastro.linhas.length },
+            { "Indicador": "Conferidos corretamente", "Quantidade": conferidos.linhas.length },
+            { "Indicador": "Pendentes de conferência", "Quantidade": pendentes.linhas.length },
+            { "Indicador": "Itens a transferir", "Quantidade": transferencias.linhas.length },
+            { "Indicador": "Patrimônios não encontrados na base", "Quantidade": naoCadastrados.linhas.length },
+            { "Indicador": "Itens registrados por contagem sem leitura", "Quantidade": quantidadeContagens }
+        ]
+    };
+
+    const arquivo = XLSX.utils.book_new();
+    adicionarAbaRelatorio(arquivo, resumo, "Resumo geral", "EAF0F6");
+    adicionarAbaRelatorio(arquivo, pendentes, "Pendentes", "EAF1FF");
+    adicionarAbaRelatorio(arquivo, transferencias, "A transferir", "FFF4D6");
+    adicionarAbaRelatorio(arquivo, naoCadastrados, "Não consta na base", "FDE7E7");
+    adicionarAbaRelatorio(arquivo, contagens, "Contagem sem leitura", "E8F7EF");
+    adicionarAbaRelatorio(arquivo, conferidos, "Conferidos", "E7F5FF");
+    adicionarAbaRelatorio(arquivo, cadastro, "Cadastro oficial importado", "F3F4F6");
+
+    const sufixoLocal = abrangencia === "local" && local ? `-${normalizarNomeArquivo(local)}` : "";
+    XLSX.writeFile(arquivo, `relatorio-geral-${normalizarNomeArquivo(sessao)}${sufixoLocal}.xlsx`);
+    return cadastro.linhas.length + transferencias.linhas.length + naoCadastrados.linhas.length + contagens.linhas.length;
+}
 async function montarRelatorioPatrimoniosOperador(sessao, local, abrangencia, tipo) {
     const snapshot = await colecao.where("sessao", "==", sessao).get();
     let itens = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -868,14 +991,14 @@ async function montarRelatorioPatrimoniosOperador(sessao, local, abrangencia, ti
 
     return {
         nome: `Relatório ${nomeTipoRelatorioOperador(tipo)} - ${sessao}`,
-        colunas: ["Lotação", "Local", "Patrimônio", "Patrimônio antigo", "Descrição", "Marca", "Status", "Responsável", "Data da conferência"],
+        colunas: ["Lotação", "Local", "Patrimônio", "Patrimônio antigo", "Descrição do bem", "Marca/Modelo", "Status", "Responsável", "Data da conferência"],
         linhas: itens.map(item => ({
             "Lotação": item.sessao || "",
             "Local": item.local || "",
             "Patrimônio": item.numero || "",
-            "Patrimônio antigo": item.patAntigo || "",
-            "Descrição": item.descricao || "",
-            "Marca": item.marca || "",
+            "Patrimônio antigo": item.patrimonioAntigo || item.patAntigo || "",
+            "Descrição do bem": item.descricao || "",
+            "Marca/Modelo": item.modelo || item.marca || "",
             "Status": item.status === "conferido" ? "Conferido" : "Pendente",
             "Responsável": item.usuario || "",
             "Data da conferência": formatarData(item.conferidoEm)
@@ -898,25 +1021,25 @@ async function montarRelatorioTransferenciasOperador(sessao, local, abrangencia)
         colunas: [
             "Patrimônio",
             "Patrimônio antigo",
-            "Descrição",
-            "Marca",
+            "Descrição do bem",
+            "Marca/Modelo",
             "Lotação cadastrada",
-            "Local cadastrado",
+            "Local onde está cadastrado",
             "Lotação encontrada",
-            "Local encontrado",
+            "Local onde foi encontrado",
             "Responsável",
             "Data da leitura",
             "Situação"
         ],
         linhas: itens.map(item => ({
             "Patrimônio": item.numero || item.numeroSemPrefixo || item.numeroInformado || "",
-            "Patrimônio antigo": item.patAntigo || "",
-            "Descrição": item.descricao || "",
-            "Marca": item.marca || "",
+            "Patrimônio antigo": item.patrimonioAntigo || item.patAntigo || "",
+            "Descrição do bem": item.descricao || "",
+            "Marca/Modelo": item.modelo || item.marca || "",
             "Lotação cadastrada": item.lotacaoCadastrada || "",
-            "Local cadastrado": item.localCadastrado || "",
+            "Local onde está cadastrado": item.localCadastrado || "",
             "Lotação encontrada": item.lotacaoEncontrada || "",
-            "Local encontrado": item.localEncontrado || "",
+            "Local onde foi encontrado": item.localEncontrado || "",
             "Responsável": item.responsavel || "",
             "Data da leitura": formatarData(item.ultimaLeituraEm || item.primeiraLeituraEm),
             "Situação": item.status || "Transferência pendente"
@@ -936,12 +1059,12 @@ async function montarRelatorioNaoCadastradosOperador(sessao, local, abrangencia)
 
     return {
         nome: `Não consta na base - ${sessao}`,
-        colunas: ["Lotação", "Local", "Patrimônio informado", "Sem prefixo 67", "Responsável", "Data da leitura", "Situação"],
+        colunas: ["Lotação", "Local", "Patrimônio lido", "Patrimônio sem prefixo 67", "Responsável", "Data da leitura", "Situação"],
         linhas: itens.map(item => ({
             "Lotação": item.sessao || "",
             "Local": item.local || "",
-            "Patrimônio informado": item.numeroInformado || "",
-            "Sem prefixo 67": item.numeroSemPrefixo || "",
+            "Patrimônio lido": item.numeroInformado || "",
+            "Patrimônio sem prefixo 67": item.numeroSemPrefixo || "",
             "Responsável": item.usuario || "",
             "Data da leitura": formatarData(item.ultimaLeituraEm || item.primeiraLeituraEm),
             "Situação": item.status || "Não consta na base"
@@ -961,7 +1084,7 @@ async function montarRelatorioContagensOperador(sessao, local, abrangencia) {
 
     return {
         nome: `Contagem sem leitura - ${sessao}`,
-        colunas: ["Lotação", "Local", "Tipo do item", "Quantidade", "Observação", "Responsável", "Data"],
+        colunas: ["Lotação", "Local", "Tipo do item", "Quantidade", "Observação", "Responsável", "Data do registro"],
         linhas: itens.map(item => ({
             "Lotação": item.sessao || "",
             "Local": item.local || "",
@@ -969,16 +1092,59 @@ async function montarRelatorioContagensOperador(sessao, local, abrangencia) {
             "Quantidade": item.quantidade || "",
             "Observação": item.observacao || "",
             "Responsável": item.responsavel || "",
-            "Data": formatarData(item.criadoEm)
+            "Data do registro": formatarData(item.criadoEm)
         }))
     };
 }
 
 function exportarExcel(relatorio) {
-    const planilha = XLSX.utils.json_to_sheet(relatorio.linhas, { header: relatorio.colunas });
     const arquivo = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(arquivo, planilha, "Relatório");
+    adicionarAbaRelatorio(arquivo, relatorio, "Relatório", "EAF0F6");
     XLSX.writeFile(arquivo, `${normalizarNomeArquivo(relatorio.nome)}.xlsx`);
+}
+
+function adicionarAbaRelatorio(arquivo, relatorio, nomeAba, corLinha) {
+    const linhas = relatorio.linhas.length ? relatorio.linhas : [Object.fromEntries(relatorio.colunas.map(coluna => [coluna, ""]))];
+    const planilha = XLSX.utils.json_to_sheet(linhas, { header: relatorio.colunas });
+    aplicarEstiloPlanilha(planilha, relatorio.colunas, linhas, corLinha);
+    XLSX.utils.book_append_sheet(arquivo, planilha, nomeAbaExcel(nomeAba));
+}
+
+function aplicarEstiloPlanilha(planilha, colunas, linhas, corLinha) {
+    const ultimaLinha = linhas.length + 1;
+    const ultimaColuna = colunas.length;
+    const borda = { style: "thin", color: { rgb: "D9E1EA" } };
+
+    for (let c = 0; c < ultimaColuna; c++) {
+        const endereco = XLSX.utils.encode_cell({ r: 0, c });
+        if (!planilha[endereco]) planilha[endereco] = { t: "s", v: colunas[c] || "" };
+        planilha[endereco].s = {
+            fill: { fgColor: { rgb: "263746" } },
+            font: { color: { rgb: "FFFFFF" }, bold: true },
+            alignment: { horizontal: "center", vertical: "center", wrapText: true },
+            border: { top: borda, bottom: borda, left: borda, right: borda }
+        };
+    }
+
+    for (let r = 1; r < ultimaLinha; r++) {
+        const cor = r % 2 === 1 ? corLinha : "FFFFFF";
+        for (let c = 0; c < ultimaColuna; c++) {
+            const endereco = XLSX.utils.encode_cell({ r, c });
+            if (!planilha[endereco]) planilha[endereco] = { t: "s", v: "" };
+            planilha[endereco].s = {
+                fill: { fgColor: { rgb: cor } },
+                alignment: { vertical: "top", wrapText: true },
+                border: { top: borda, bottom: borda, left: borda, right: borda }
+            };
+        }
+    }
+
+    planilha["!cols"] = colunas.map(coluna => ({ wch: Math.min(Math.max(String(coluna).length + 8, 16), 42) }));
+    planilha["!autofilter"] = { ref: XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: ultimaLinha - 1, c: ultimaColuna - 1 } }) };
+}
+
+function nomeAbaExcel(nome) {
+    return String(nome || "Relatório").replace(/[\\/?*\[\]:]/g, " ").slice(0, 31);
 }
 
 function nomeTipoRelatorioOperador(tipo) {
@@ -1137,6 +1303,14 @@ function mostrarMensagem(id, texto, tipo) {
     msg.textContent = texto;
     msg.className = `mensagem ${tipo}`;
 }
+
+
+
+
+
+
+
+
 
 
 
