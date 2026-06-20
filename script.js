@@ -29,15 +29,13 @@ const ESTRUTURA_TRE_PADRAO = {
 let ESTRUTURA_TRE = { ...ESTRUTURA_TRE_PADRAO };
 
 let grafico = null;
-let listenerAtivo = null;
-let listenerLotacaoAtivo = null;
 let scanner = null;
 let scannerTravado = false;
 let localAtivoFiltro = "";
 let locaisPorSessao = {};
-let listenerSessoesAtivo = null;
-let listenerLocaisAtivo = null;
 let estadoOperador = carregarEstadoOperador();
+let painelLocalAtual = { sessao: '', local: '', pendentes: [], conferidos: [] };
+let resumoLotacaoAtual = { total: 0, pendentes: 0, conferidos: 0 };
 
 document.addEventListener("DOMContentLoaded", iniciarSistema);
 
@@ -71,7 +69,6 @@ function iniciarSistema() {
     });
 
     iniciarMonitoramentoSessoes();
-    iniciarMonitoramentoLocais();
 }
 
 function ajustarConferenciaPorDispositivo() {
@@ -79,23 +76,21 @@ function ajustarConferenciaPorDispositivo() {
     if (!detalhes) return;
     detalhes.open = false;
 }
-function iniciarMonitoramentoSessoes() {
-    if (listenerSessoesAtivo) listenerSessoesAtivo();
-
-    listenerSessoesAtivo = configSessoesRef.onSnapshot(doc => {
+async function iniciarMonitoramentoSessoes() {
+    try {
+        const doc = await configSessoesRef.get();
         const lista = doc.exists && Array.isArray(doc.data().lista)
             ? doc.data().lista
             : Object.keys(ESTRUTURA_TRE_PADRAO);
 
         aplicarSessoesConfiguradas(lista);
-        carregarSessoesDoMapa();
-        carregarLocaisDoFirebase();
-    }, erro => {
+    } catch (erro) {
         console.error(erro);
         aplicarSessoesConfiguradas(Object.keys(ESTRUTURA_TRE_PADRAO));
-        carregarSessoesDoMapa();
-        carregarLocaisDoFirebase();
-    });
+    }
+
+    carregarSessoesDoMapa();
+    await carregarLocaisDoFirebase();
 }
 
 function carregarSessoesDoMapa() {
@@ -127,15 +122,8 @@ function aplicarSessoesConfiguradas(lista) {
     ESTRUTURA_TRE = estrutura;
 }
 
-function iniciarMonitoramentoLocais() {
-    if (listenerLocaisAtivo) listenerLocaisAtivo();
-
-    listenerLocaisAtivo = configLocaisRef.onSnapshot(doc => {
-        locaisPorSessao = limparLocaisIguaisASessao(doc.exists && doc.data().porSessao ? doc.data().porSessao : {});
-        if (getSessaoAtual()) verificarFluxoSessao();
-    }, erro => {
-        console.error(erro);
-    });
+async function iniciarMonitoramentoLocais() {
+    await carregarLocaisDoFirebase();
 }
 
 function carregarLocaisDoFirebase() {
@@ -219,7 +207,7 @@ function getLocalAtual() {
     return localAtivoFiltro;
 }
 
-function ativarMonitoramentoFiltro() {
+async function ativarMonitoramentoFiltro() {
     const sessaoSel = getSessaoAtual();
     localAtivoFiltro = getLocalAtual();
     salvarEstadoOperador();
@@ -228,33 +216,7 @@ function ativarMonitoramentoFiltro() {
 
     document.getElementById("tituloResumo").textContent = `Progresso do local: ${localAtivoFiltro}`;
     atualizarRotulosAndamento(sessaoSel, localAtivoFiltro);
-    ativarMonitoramentoLotacao(sessaoSel);
-
-    if (listenerAtivo) listenerAtivo();
-
-    listenerAtivo = colecao
-        .where("sessao", "==", sessaoSel)
-        .where("local", "==", localAtivoFiltro)
-        .onSnapshot(snapshot => {
-            const pendentes = [];
-            const conferidos = [];
-
-            snapshot.forEach(doc => {
-                const item = { id: doc.id, ...doc.data() };
-                if (item.status === "conferido") {
-                    conferidos.push(item);
-                } else {
-                    pendentes.push(item);
-                }
-            });
-
-            ordenarPorNumero(pendentes);
-            ordenarPorNumero(conferidos);
-            atualizarTela(pendentes, conferidos);
-        }, erro => {
-            console.error(erro);
-            mostrarMensagem("mensagem", "Erro ao carregar os dados do Firebase.", "erro");
-        });
+    await atualizarDadosSelecionados();
 }
 
 function limparTelaResumo() {
@@ -281,37 +243,78 @@ function atualizarTela(pendentes, conferidos) {
     atualizarGrafico(pendentes.length, conferidos.length);
 }
 
-function ativarMonitoramentoLotacao(sessaoSel) {
-    if (listenerLotacaoAtivo) listenerLotacaoAtivo();
+async function atualizarDadosSelecionados() {
+    const sessaoSel = getSessaoAtual();
+    const localSel = getLocalAtual();
 
+    if (!sessaoSel || !localSel) {
+        limparTelaResumo();
+        return;
+    }
+
+    try {
+        await Promise.all([
+            carregarDadosLocal(sessaoSel, localSel),
+            carregarResumoLotacao(sessaoSel)
+        ]);
+    } catch (erro) {
+        console.error(erro);
+        mostrarMensagem("mensagem", "Erro ao carregar os dados do Firebase.", "erro");
+    }
+}
+
+async function carregarDadosLocal(sessaoSel, localSel) {
+    const snapshot = await colecao
+        .where("sessao", "==", sessaoSel)
+        .where("local", "==", localSel)
+        .get();
+
+    const pendentes = [];
+    const conferidos = [];
+
+    snapshot.forEach(doc => {
+        const item = { id: doc.id, ...doc.data() };
+        if (item.status === "conferido") {
+            conferidos.push(item);
+        } else {
+            pendentes.push(item);
+        }
+    });
+
+    ordenarPorNumero(pendentes);
+    ordenarPorNumero(conferidos);
+    painelLocalAtual = { sessao: sessaoSel, local: localSel, pendentes, conferidos };
+    atualizarTela(pendentes, conferidos);
+}
+
+async function carregarResumoLotacao(sessaoSel) {
     if (!sessaoSel) {
         atualizarResumoLotacao([], []);
         return;
     }
 
-    listenerLotacaoAtivo = colecao
+    const snapshot = await colecao
         .where("sessao", "==", sessaoSel)
-        .onSnapshot(snapshot => {
-            const pendentes = [];
-            const conferidos = [];
+        .get();
 
-            snapshot.forEach(doc => {
-                const item = { id: doc.id, ...doc.data() };
-                if (item.status === "conferido") {
-                    conferidos.push(item);
-                } else {
-                    pendentes.push(item);
-                }
-            });
+    const pendentes = [];
+    const conferidos = [];
 
-            atualizarResumoLotacao(pendentes, conferidos);
-        }, erro => {
-            console.error(erro);
-        });
+    snapshot.forEach(doc => {
+        const item = { id: doc.id, ...doc.data() };
+        if (item.status === "conferido") {
+            conferidos.push(item);
+        } else {
+            pendentes.push(item);
+        }
+    });
+
+    atualizarResumoLotacao(pendentes, conferidos);
 }
 
 function atualizarResumoLotacao(pendentes, conferidos) {
     const total = pendentes.length + conferidos.length;
+    resumoLotacaoAtual = { total, pendentes: pendentes.length, conferidos: conferidos.length };
     const percentual = calcularPercentual(conferidos.length, total);
 
     atualizarTexto("lotacaoTotal", total);
@@ -372,6 +375,7 @@ async function buscarpatrimonio(opcoes = {}) {
     const user = document.getElementById("campoUsuario").value.trim();
     const sessaoSel = getSessaoAtual();
     const localSel = getLocalAtual();
+    let recarregarLocal = false;
 
     if (!user) {
         mostrarMensagem("mensagem", "Digite o nome do responsável.", "erro");
@@ -423,6 +427,8 @@ async function buscarpatrimonio(opcoes = {}) {
             conferidoEm: firebase.firestore.FieldValue.serverTimestamp()
         });
 
+        recarregarLocal = true;
+        ajustarResumoLotacaoAposConferencia();
         vibrar();
         mostrarStatusLeitura(`Conferido: ${encontrado.dados.numero}`, "sucesso");
     } catch (erro) {
@@ -431,8 +437,22 @@ async function buscarpatrimonio(opcoes = {}) {
     } finally {
         const campoPatrimonio = document.getElementById("campopatrimonio");
         campoPatrimonio.value = "";
+        if (recarregarLocal) await carregarDadosLocal(sessaoSel, localSel);
         if (podeFocarCampos) campoPatrimonio.focus();
     }
+}
+
+function ajustarResumoLotacaoAposConferencia() {
+    if (!resumoLotacaoAtual || !resumoLotacaoAtual.total || resumoLotacaoAtual.pendentes <= 0) return;
+    resumoLotacaoAtual = {
+        total: resumoLotacaoAtual.total,
+        pendentes: resumoLotacaoAtual.pendentes - 1,
+        conferidos: resumoLotacaoAtual.conferidos + 1
+    };
+
+    const pendentes = Array.from({ length: resumoLotacaoAtual.pendentes });
+    const conferidos = Array.from({ length: resumoLotacaoAtual.conferidos });
+    atualizarResumoLotacao(pendentes, conferidos);
 }
 
 async function localizarPatrimonio(numero, sessao, local) {
@@ -1308,6 +1328,9 @@ function mostrarMensagem(id, texto, tipo) {
     msg.textContent = texto;
     msg.className = `mensagem ${tipo}`;
 }
+
+
+
 
 
 
