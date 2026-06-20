@@ -682,3 +682,49 @@ li {
     }
 }
 
+
+.controle-conferencia {
+    margin: 18px 0;
+    padding: 16px;
+    border: 1px solid #d9e1ea;
+    border-radius: 8px;
+    background: #f8fafc;
+}
+
+.controle-conferencia h3 {
+    margin: 0 0 8px;
+    color: #263746;
+}
+
+.acoes-controle-conferencia {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.acoes-controle-conferencia button:disabled {
+    opacity: .55;
+    cursor: not-allowed;
+}
+
+.aviso-pausa-conferencia {
+    display: grid;
+    gap: 8px;
+    padding: 18px;
+    margin-bottom: 16px;
+    border: 1px solid #f0c36a;
+    border-radius: 8px;
+    background: #fff8e6;
+    color: #6f4b08;
+    line-height: 1.45;
+}
+
+.aviso-pausa-conferencia strong {
+    display: block;
+    font-size: 1.15rem;
+    color: #263746;
+}
+
+.conteudo-bloqueado {
+    display: none !important;
+}

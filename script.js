@@ -9,6 +9,7 @@
 
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
+ativarCacheFirestore();
 const colecao = db.collection("patrimonios");
 const divergenciasColecao = db.collection("divergencias");
 const transferenciasColecao = db.collection("transferencias");
@@ -16,6 +17,7 @@ const naoCadastradosColecao = db.collection("naoCadastrados");
 const contagensColecao = db.collection("contagens");
 const configSessoesRef = db.collection("configuracoes").doc("sessoes");
 const configLocaisRef = db.collection("configuracoes").doc("locais");
+const controleSistemaRef = db.collection("configuracoes").doc("controleSistema");
 const PREFIXO_SEGURANCA_PATRIMONIO = "67";
 const CHAVE_ESTADO_OPERADOR = "inventarioPatrimonial.estadoOperador";
 
@@ -36,10 +38,12 @@ let locaisPorSessao = {};
 let estadoOperador = carregarEstadoOperador();
 let painelLocalAtual = { sessao: '', local: '', pendentes: [], conferidos: [] };
 let resumoLotacaoAtual = { total: 0, pendentes: 0, conferidos: 0 };
+let conferenciasPausadas = false;
+let mensagemPausaConferencias = mensagemPausaPadrao();
 
 document.addEventListener("DOMContentLoaded", iniciarSistema);
 
-function iniciarSistema() {
+async function iniciarSistema() {
     const selectSessao = document.getElementById("selectSessao");
     const selectLocal = document.getElementById("selectLocal");
     const campoUsuario = document.getElementById("campoUsuario");
@@ -68,9 +72,89 @@ function iniciarSistema() {
         if (evento.key === "Enter") buscarpatrimonio();
     });
 
+    if (await bloquearTelaSeConferenciaPausada()) return;
     iniciarMonitoramentoSessoes();
 }
 
+async function bloquearTelaSeConferenciaPausada() {
+    const pausado = await verificarConferenciasPausadas();
+    if (!pausado) {
+        mostrarAvisoPausa(false);
+        return false;
+    }
+
+    mostrarAvisoPausa(true, mensagemPausaConferencias);
+    limparTelaResumo();
+    return true;
+}
+
+async function verificarConferenciasPausadas() {
+    try {
+        const doc = await controleSistemaRef.get();
+        const dados = doc.exists ? doc.data() : {};
+        const pausado = Boolean(dados.conferenciasPausadas);
+        const dataPausa = dados.dataPausa || "";
+
+        if (pausado && dataPausa && dataPausa !== dataLocalAtual()) {
+            conferenciasPausadas = false;
+            mensagemPausaConferencias = mensagemPausaPadrao();
+            controleSistemaRef.set({
+                conferenciasPausadas: false,
+                liberadoAutomaticamenteEm: firebase.firestore.FieldValue.serverTimestamp()
+            }, { merge: true }).catch(console.error);
+            return false;
+        }
+
+        conferenciasPausadas = pausado;
+        mensagemPausaConferencias = dados.mensagemPausa || mensagemPausaPadrao();
+        return conferenciasPausadas;
+    } catch (erro) {
+        console.error(erro);
+        return false;
+    }
+}
+
+function mostrarAvisoPausa(visivel, mensagem = mensagemPausaPadrao()) {
+    const aviso = document.getElementById("avisoPausaConferencia");
+    if (!aviso) return;
+
+    aviso.hidden = !visivel;
+    aviso.innerHTML = visivel
+        ? `<strong>Conferência pausada</strong><span>${mensagem}</span>`
+        : "";
+
+    document.querySelectorAll(".localizacao-operador, .andamento-desktop, .conferencia-operador, .contagem-operador, .painel-principal-operador, .rodape-operador")
+        .forEach(el => el.classList.toggle("conteudo-bloqueado", visivel));
+}
+
+function ativarCacheFirestore() {
+    try {
+        db.enablePersistence({ synchronizeTabs: true }).catch(erro => {
+            if (erro.code === "failed-precondition") {
+                console.warn("Cache offline do Firestore já está ativo em outra aba.");
+                return;
+            }
+            if (erro.code === "unimplemented") {
+                console.warn("Este navegador não suporta cache offline do Firestore.");
+                return;
+            }
+            console.warn("Não foi possível ativar o cache offline do Firestore.", erro);
+        });
+    } catch (erro) {
+        console.warn("Não foi possível ativar o cache offline do Firestore.", erro);
+    }
+}
+function mensagemPausaPadrao() {
+    return "Hoje os patrimônios já trabalharam bastante. Descanse e retome as conferências no próximo dia, ou aguarde liberação do administrador.";
+}
+
+function dataLocalAtual() {
+    const agora = new Date();
+    const ano = agora.getFullYear();
+    const mes = String(agora.getMonth() + 1).padStart(2, "0");
+    const dia = String(agora.getDate()).padStart(2, "0");
+    return `${ano}-${mes}-${dia}`;
+}
 function ajustarConferenciaPorDispositivo() {
     const detalhes = document.getElementById("conferenciaManual");
     if (!detalhes) return;
@@ -368,6 +452,16 @@ function render(id, lista, showUser) {
     });
 }
 
+async function bloquearLeituraSePausada() {
+    const pausado = await verificarConferenciasPausadas();
+    if (!pausado) return false;
+
+    mostrarAvisoPausa(true, mensagemPausaConferencias);
+    mostrarStatusLeitura("Leituras pausadas pelo administrador.", "aviso");
+    mostrarMensagem("mensagem", "Retome no próximo dia ou aguarde liberação.", "aviso");
+    await pararScanner();
+    return true;
+}
 async function buscarpatrimonio(opcoes = {}) {
     const podeFocarCampos = opcoes.focarCampos !== false;
     const num = somenteDigitos(document.getElementById("campopatrimonio").value);
@@ -376,6 +470,8 @@ async function buscarpatrimonio(opcoes = {}) {
     const sessaoSel = getSessaoAtual();
     const localSel = getLocalAtual();
     let recarregarLocal = false;
+
+    if (await bloquearLeituraSePausada()) return;
 
     if (!user) {
         mostrarMensagem("mensagem", "Digite o nome do responsável.", "erro");
@@ -491,33 +587,28 @@ async function localizarPatrimonioLegado(numero, sessao, local) {
 }
 
 async function localizarPatrimonioEmTodoBanco(numero, sessaoAtual, localAtual) {
-    const numerosBusca = gerarNumerosBuscaPatrimonio(numero);
-    const candidatos = [];
+    const numerosBusca = gerarNumerosBuscaPatrimonio(numero).slice(0, 10);
+    if (!numerosBusca.length) return null;
 
     try {
         const snapshotAliases = await colecao
-            .where("aliases", "array-contains-any", numerosBusca.slice(0, 10))
+            .where("aliases", "array-contains-any", numerosBusca)
+            .limit(10)
             .get();
 
-        snapshotAliases.forEach(doc => candidatos.push(doc));
-    } catch (erro) {
-        console.warn("Busca por aliases indisponível. Usando varredura simples.", erro);
-    }
+        for (const doc of snapshotAliases.docs) {
+            const dados = doc.data();
+            const aliases = gerarAliasesNumero(dados.numero, dados.patrimonioAntigo, dados.patAntigo);
+            const mesmoNumero = numerosBusca.some(numeroBusca => aliases.includes(numeroBusca));
+            const mesmoLocal = dados.sessao === sessaoAtual && dados.local === localAtual;
 
-    if (!candidatos.length) {
-        const snapshot = await colecao.get();
-        snapshot.forEach(doc => candidatos.push(doc));
-    }
-
-    for (const doc of candidatos) {
-        const dados = doc.data();
-        const aliases = gerarAliasesNumero(dados.numero, dados.patrimonioAntigo, dados.patAntigo);
-        const mesmoNumero = numerosBusca.some(numeroBusca => aliases.includes(numeroBusca));
-        const mesmoLocal = dados.sessao === sessaoAtual && dados.local === localAtual;
-
-        if (mesmoNumero && !mesmoLocal) {
-            return { ref: doc.ref, dados };
+            if (mesmoNumero && !mesmoLocal) {
+                return { ref: doc.ref, dados };
+            }
         }
+    } catch (erro) {
+        console.error("Busca indexada por aliases falhou. A varredura completa foi bloqueada para economizar leituras.", erro);
+        mostrarMensagem("mensagem", "Busca otimizada indisponível. Verifique o índice/aliases no Firebase.", "erro");
     }
 
     return null;
@@ -586,6 +677,7 @@ async function registrarTransferencia(numeroInformado, numeroSemPrefixo, encontr
 }
 
 async function abrirScanner() {
+    if (await bloquearLeituraSePausada()) return;
     const user = document.getElementById("campoUsuario").value.trim();
     const sessaoSel = getSessaoAtual();
     const localSel = getLocalAtual();
@@ -911,6 +1003,7 @@ async function exportarRelatorioOperador() {
 }
 
 async function registrarContagemSemLeitura() {
+    if (await bloquearLeituraSePausada()) return;
     const sessao = getSessaoAtual();
     const local = getLocalAtual();
     const responsavel = document.getElementById("campoUsuario").value.trim();
@@ -1328,6 +1421,9 @@ function mostrarMensagem(id, texto, tipo) {
     msg.textContent = texto;
     msg.className = `mensagem ${tipo}`;
 }
+
+
+
 
 
 
