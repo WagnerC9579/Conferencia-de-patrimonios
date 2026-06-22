@@ -93,32 +93,6 @@
             <p id="mensagem" class="mensagem"></p>
         </section>
 
-        <section class="box contagem-operador">
-            <details>
-                <summary>Contagem sem leitura</summary>
-
-                <div class="linha-form contagem-grid">
-                    <label for="tipoItemContagem">
-                        Tipo do item
-                        <input type="text" id="tipoItemContagem" placeholder="Ex: Câmera, access point, TV">
-                    </label>
-
-                    <label for="quantidadeContagem">
-                        Quantidade
-                        <input type="number" id="quantidadeContagem" min="1" step="1" placeholder="Ex: 6">
-                    </label>
-                </div>
-
-                <label for="observacaoContagem">
-                    Observação
-                    <input type="text" id="observacaoContagem" placeholder="Ex: Item em altura, sem acesso à etiqueta">
-                </label>
-
-                <button id="btnRegistrarContagem" type="button">Registrar contagem</button>
-                <p id="mensagemContagem" class="mensagem"></p>
-            </details>
-        </section>
-
         <section class="painel-principal-operador">
             <div class="box grafico-desktop">
                 <h2 id="tituloResumo">Progresso do local</h2>
@@ -128,7 +102,7 @@
             </div>
 
             <div class="listas-operador">
-                <details open>
+                <details>
                     <summary id="summaryPendentes">Pendentes</summary>
                     <ul id="listapatrimonios"></ul>
                 </details>
@@ -160,9 +134,17 @@
         </section>
     </main>
 
-    <script src="script.js?v=20260622-otimizacao"></script>
+    <div id="barraSelecaoPendentes" class="barra-selecao-pendentes" hidden>
+        <span id="quantidadePendentesSelecionados">0 selecionados</span>
+        <button id="btnMarcarSelecionadosOk" type="button">Marcar como OK</button>
+    </div>
+
+    <script src="script.js?v=20260622-barra-selecao"></script>
 </body>
 </html>
+
+
+
 
 
 

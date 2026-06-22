@@ -39,6 +39,8 @@ let estadoOperador = carregarEstadoOperador();
 let painelLocalAtual = { sessao: '', local: '', pendentes: [], conferidos: [] };
 let resumoLotacaoAtual = { total: 0, pendentes: 0, conferidos: 0 };
 let cacheBuscaLeituraAtual = new Map();
+let statusLocaisCache = {};
+let pendentesSelecionados = new Map();
 let conferenciasPausadas = false;
 let mensagemPausaConferencias = mensagemPausaPadrao();
 
@@ -67,8 +69,9 @@ async function iniciarSistema() {
     document.getElementById("btnAbrirScanner").addEventListener("click", abrirScanner);
     document.getElementById("btnPararScanner").addEventListener("click", pararScanner);
     document.getElementById("btnExportarRelatorioOperador").addEventListener("click", exportarRelatorioOperador);
-    document.getElementById("btnRegistrarContagem").addEventListener("click", registrarContagemSemLeitura);
-    document.getElementById("btnAtualizarDados")?.addEventListener("click", atualizarDadosSelecionados);
+    document.getElementById("btnRegistrarContagem")?.addEventListener("click", registrarContagemSemLeitura);
+    document.getElementById("btnMarcarSelecionadosOk")?.addEventListener("click", marcarSelecionadosComoOk);
+    document.getElementById("btnAtualizarDados")?.addEventListener("click", atualizarDadosSobDemanda);
 
     document.getElementById("campopatrimonio").addEventListener("keydown", evento => {
         if (evento.key === "Enter") buscarpatrimonio();
@@ -258,14 +261,9 @@ function verificarFluxoSessao() {
     }
 
     if (locaisDisponiveis.length > 1) {
-        locaisDisponiveis.forEach(local => {
-            const opt = document.createElement("option");
-            opt.value = local;
-            opt.textContent = local;
-            selectLocal.appendChild(opt);
-        });
-
         blocoLocal.style.display = "block";
+        preencherOpcoesLocaisComStatus(sessaoSel, locaisDisponiveis, estadoOperador.local);
+        atualizarIndicadoresLocais(sessaoSel, locaisDisponiveis);
 
         if (estadoOperador.sessao === sessaoSel && estadoOperador.local && locaisDisponiveis.includes(estadoOperador.local)) {
             selectLocal.value = estadoOperador.local;
@@ -281,6 +279,77 @@ function verificarFluxoSessao() {
     ativarMonitoramentoFiltro();
 }
 
+function preencherOpcoesLocaisComStatus(sessao, locais, selecionado = "") {
+    const selectLocal = document.getElementById("selectLocal");
+    const statusSessao = statusLocaisCache[sessao] || {};
+    const locaisOrdenados = ordenarLocaisPorStatus(locais, statusSessao);
+    const valorAtual = selecionado || selectLocal.value;
+
+    selectLocal.innerHTML = '<option value="" disabled selected>Escolha o local...</option>';
+
+    locaisOrdenados.forEach(local => {
+        const resumo = statusSessao[local];
+        const opt = document.createElement("option");
+        opt.value = local;
+        opt.textContent = textoOpcaoLocal(local, resumo);
+        opt.className = `status-local-${classeStatusLocal(resumo)}`;
+        selectLocal.appendChild(opt);
+    });
+
+    if (valorAtual && locais.includes(valorAtual)) selectLocal.value = valorAtual;
+}
+
+async function atualizarIndicadoresLocais(sessao, locais) {
+    if (!sessao || !Array.isArray(locais) || !locais.length) return;
+
+    try {
+        const snapshot = await colecao.where("sessao", "==", sessao).get();
+        const resumo = {};
+
+        locais.forEach(local => {
+            resumo[local] = { total: 0, conferidos: 0, pendentes: 0 };
+        });
+
+        snapshot.forEach(doc => {
+            const item = doc.data();
+            const local = item.local;
+            if (!resumo[local]) return;
+            resumo[local].total += 1;
+            if (item.status === "conferido") {
+                resumo[local].conferidos += 1;
+            } else {
+                resumo[local].pendentes += 1;
+            }
+        });
+
+        statusLocaisCache[sessao] = resumo;
+        preencherOpcoesLocaisComStatus(sessao, locais, getLocalAtual() || estadoOperador.local);
+    } catch (erro) {
+        console.error("Erro ao carregar indicadores dos locais.", erro);
+    }
+}
+
+function ordenarLocaisPorStatus(locais, statusSessao) {
+    const peso = { nao_iniciado: 0, andamento: 1, concluido: 2, sem_dados: 3 };
+    return [...locais].sort((a, b) => {
+        const statusA = classeStatusLocal(statusSessao[a]);
+        const statusB = classeStatusLocal(statusSessao[b]);
+        if (peso[statusA] !== peso[statusB]) return peso[statusA] - peso[statusB];
+        return a.localeCompare(b, "pt-BR", { numeric: true });
+    });
+}
+
+function textoOpcaoLocal(local, resumo) {
+    if (!resumo) return local;
+    return `${local}    ${resumo.conferidos}/${resumo.total}`;
+}
+
+function classeStatusLocal(resumo) {
+    if (!resumo || !resumo.total) return "sem_dados";
+    if (resumo.conferidos === 0) return "nao_iniciado";
+    if (resumo.conferidos < resumo.total) return "andamento";
+    return "concluido";
+}
 function getSessaoAtual() {
     return document.getElementById("selectSessao").value;
 }
@@ -329,6 +398,14 @@ function atualizarTela(pendentes, conferidos) {
     atualizarGrafico(pendentes.length, conferidos.length);
 }
 
+async function atualizarDadosSobDemanda() {
+    const sessao = getSessaoAtual();
+    if (sessao) {
+        delete statusLocaisCache[sessao];
+        await atualizarIndicadoresLocais(sessao, getLocaisDaSessao(sessao));
+    }
+    await atualizarDadosSelecionados();
+}
 async function atualizarDadosSelecionados() {
     const sessaoSel = getSessaoAtual();
     const localSel = getLocalAtual();
@@ -432,6 +509,12 @@ function atualizarBarra(id, percentual) {
 function render(id, lista, showUser) {
     const ul = document.getElementById(id);
     ul.innerHTML = "";
+    const listaPendente = id === "listapatrimonios";
+
+    if (listaPendente) {
+        pendentesSelecionados.clear();
+        atualizarBotaoSelecionados();
+    }
 
     if (!lista.length) {
         const li = document.createElement("li");
@@ -448,10 +531,111 @@ function render(id, lista, showUser) {
             (item.modelo || item.marca) ? `Marca: ${item.modelo || item.marca}` : "",
             showUser && item.usuario ? `Responsável: ${item.usuario}` : ""
         ].filter(Boolean);
+        const texto = `${item.numero} - ${partes.join(" | ")}`;
 
-        li.textContent = `${item.numero} - ${partes.join(" | ")}`;
+        if (!listaPendente) {
+            li.textContent = texto;
+            ul.appendChild(li);
+            return;
+        }
+
+        li.className = "item-pendente-com-acoes";
+
+        const selecao = document.createElement("label");
+        selecao.className = "selecao-item-pendente";
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.setAttribute("aria-label", `Selecionar patrimônio ${item.numero}`);
+        checkbox.addEventListener("change", () => {
+            if (checkbox.checked) {
+                pendentesSelecionados.set(item.id, item);
+            } else {
+                pendentesSelecionados.delete(item.id);
+            }
+            atualizarBotaoSelecionados();
+        });
+
+        const descricao = document.createElement("span");
+        descricao.textContent = texto;
+        selecao.append(checkbox, descricao);
+
+        const botaoOk = document.createElement("button");
+        botaoOk.type = "button";
+        botaoOk.className = "botao-ok-pendente";
+        botaoOk.textContent = "OK";
+        botaoOk.addEventListener("click", () => marcarPendenteIndividualComoOk(item));
+
+        li.append(selecao, botaoOk);
         ul.appendChild(li);
     });
+}
+
+function atualizarBotaoSelecionados() {
+    const barra = document.getElementById("barraSelecaoPendentes");
+    const quantidadeTexto = document.getElementById("quantidadePendentesSelecionados");
+    if (!barra || !quantidadeTexto) return;
+
+    const quantidade = pendentesSelecionados.size;
+    barra.hidden = quantidade === 0;
+    quantidadeTexto.textContent = `${quantidade} ${quantidade === 1 ? "selecionado" : "selecionados"}`;
+    document.body.classList.toggle("selecao-pendentes-ativa", quantidade > 0);
+}
+
+async function marcarPendenteIndividualComoOk(item) {
+    if (!confirm("Confirmar este patrimônio como conferido?")) return;
+    await marcarPendentesComoConferidos([item]);
+}
+
+async function marcarSelecionadosComoOk() {
+    const itens = Array.from(pendentesSelecionados.values());
+    if (!itens.length) return;
+    if (!confirm(`Confirmar ${itens.length} patrimônios como conferidos?`)) return;
+    await marcarPendentesComoConferidos(itens);
+}
+
+async function marcarPendentesComoConferidos(itens) {
+    if (await bloquearLeituraSePausada()) return;
+
+    const responsavel = document.getElementById("campoUsuario").value.trim();
+    const sessao = getSessaoAtual();
+    const local = getLocalAtual();
+
+    if (!responsavel) {
+        mostrarMensagem("mensagem", "Digite o nome do responsável.", "erro");
+        document.getElementById("campoUsuario").focus();
+        return;
+    }
+
+    if (!sessao || !local || !itens.length) return;
+
+    try {
+        for (let inicio = 0; inicio < itens.length; inicio += 450) {
+            const lote = itens.slice(inicio, inicio + 450);
+            const batch = db.batch();
+            lote.forEach(item => {
+                batch.update(colecao.doc(item.id), {
+                    status: "conferido",
+                    usuario: responsavel,
+                    conferidoEm: firebase.firestore.FieldValue.serverTimestamp()
+                });
+            });
+            await batch.commit();
+        }
+
+        ajustarResumoLotacaoAposConferencias(itens.length);
+        ajustarIndicadorLocalAposConferencias(sessao, local, itens.length);
+        pendentesSelecionados.clear();
+        atualizarBotaoSelecionados();
+        await carregarDadosLocal(sessao, local);
+        vibrar();
+        mostrarStatusLeitura(
+            itens.length === 1 ? `Conferido: ${itens[0].numero}` : `${itens.length} patrimônios conferidos`,
+            "sucesso"
+        );
+    } catch (erro) {
+        console.error(erro);
+        mostrarMensagem("mensagem", "Erro ao conferir os patrimônios selecionados.", "erro");
+    }
 }
 
 async function bloquearLeituraSePausada() {
@@ -542,16 +726,31 @@ async function buscarpatrimonio(opcoes = {}) {
 }
 
 function ajustarResumoLotacaoAposConferencia() {
+    ajustarResumoLotacaoAposConferencias(1);
+    ajustarIndicadorLocalAposConferencias(getSessaoAtual(), getLocalAtual(), 1);
+}
+
+function ajustarResumoLotacaoAposConferencias(quantidade) {
     if (!resumoLotacaoAtual || !resumoLotacaoAtual.total || resumoLotacaoAtual.pendentes <= 0) return;
+    const alterados = Math.min(Number(quantidade) || 0, resumoLotacaoAtual.pendentes);
     resumoLotacaoAtual = {
         total: resumoLotacaoAtual.total,
-        pendentes: resumoLotacaoAtual.pendentes - 1,
-        conferidos: resumoLotacaoAtual.conferidos + 1
+        pendentes: resumoLotacaoAtual.pendentes - alterados,
+        conferidos: resumoLotacaoAtual.conferidos + alterados
     };
 
     const pendentes = Array.from({ length: resumoLotacaoAtual.pendentes });
     const conferidos = Array.from({ length: resumoLotacaoAtual.conferidos });
     atualizarResumoLotacao(pendentes, conferidos);
+}
+
+function ajustarIndicadorLocalAposConferencias(sessao, local, quantidade) {
+    const resumo = statusLocaisCache[sessao]?.[local];
+    if (!resumo || !resumo.total) return;
+    const alterados = Math.min(Number(quantidade) || 0, resumo.pendentes);
+    resumo.conferidos += alterados;
+    resumo.pendentes -= alterados;
+    preencherOpcoesLocaisComStatus(sessao, getLocaisDaSessao(sessao), local);
 }
 
 async function localizarPatrimonio(numero, sessao, local) {
@@ -1438,6 +1637,10 @@ function mostrarMensagem(id, texto, tipo) {
     msg.textContent = texto;
     msg.className = `mensagem ${tipo}`;
 }
+
+
+
+
 
 
 
