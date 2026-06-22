@@ -728,3 +728,33 @@ li {
 .conteudo-bloqueado {
     display: none !important;
 }
+
+.cabecalho-andamento {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 10px;
+}
+
+.cabecalho-andamento h2 {
+    margin: 0;
+}
+
+.cabecalho-andamento button {
+    width: auto;
+    min-height: 34px;
+    padding: 8px 12px;
+    font-size: 13px;
+}
+
+@media (max-width: 760px) {
+    .cabecalho-andamento {
+        align-items: stretch;
+    }
+
+    .cabecalho-andamento button {
+        width: auto;
+        white-space: nowrap;
+    }
+}

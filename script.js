@@ -38,6 +38,7 @@ let locaisPorSessao = {};
 let estadoOperador = carregarEstadoOperador();
 let painelLocalAtual = { sessao: '', local: '', pendentes: [], conferidos: [] };
 let resumoLotacaoAtual = { total: 0, pendentes: 0, conferidos: 0 };
+let cacheBuscaLeituraAtual = new Map();
 let conferenciasPausadas = false;
 let mensagemPausaConferencias = mensagemPausaPadrao();
 
@@ -67,6 +68,7 @@ async function iniciarSistema() {
     document.getElementById("btnPararScanner").addEventListener("click", pararScanner);
     document.getElementById("btnExportarRelatorioOperador").addEventListener("click", exportarRelatorioOperador);
     document.getElementById("btnRegistrarContagem").addEventListener("click", registrarContagemSemLeitura);
+    document.getElementById("btnAtualizarDados")?.addEventListener("click", atualizarDadosSelecionados);
 
     document.getElementById("campopatrimonio").addEventListener("keydown", evento => {
         if (evento.key === "Enter") buscarpatrimonio();
@@ -470,6 +472,7 @@ async function buscarpatrimonio(opcoes = {}) {
     const sessaoSel = getSessaoAtual();
     const localSel = getLocalAtual();
     let recarregarLocal = false;
+    cacheBuscaLeituraAtual = new Map();
 
     if (await bloquearLeituraSePausada()) return;
 
@@ -569,16 +572,16 @@ async function localizarPatrimonio(numero, sessao, local) {
 }
 
 async function localizarPatrimonioLegado(numero, sessao, local) {
-    const numerosBusca = gerarNumerosBuscaPatrimonio(numero);
-    const snapshot = await colecao
-        .where("sessao", "==", sessao)
-        .where("local", "==", local)
-        .get();
+    const numerosBusca = gerarNumerosBuscaPatrimonio(numero).slice(0, 10);
+    const candidatos = await buscarCandidatosPorAliases(numerosBusca);
 
-    for (const doc of snapshot.docs) {
+    for (const doc of candidatos) {
         const dados = doc.data();
-        const candidatos = gerarAliasesNumero(dados.numero, dados.patrimonioAntigo, dados.patAntigo);
-        if (numerosBusca.some(numeroBusca => candidatos.includes(numeroBusca))) {
+        const aliases = gerarAliasesNumero(dados.numero, dados.patrimonioAntigo, dados.patAntigo);
+        const mesmoNumero = numerosBusca.some(numeroBusca => aliases.includes(numeroBusca));
+        const mesmoLocal = dados.sessao === sessao && dados.local === local;
+
+        if (mesmoNumero && mesmoLocal) {
             return { ref: doc.ref, dados };
         }
     }
@@ -588,30 +591,44 @@ async function localizarPatrimonioLegado(numero, sessao, local) {
 
 async function localizarPatrimonioEmTodoBanco(numero, sessaoAtual, localAtual) {
     const numerosBusca = gerarNumerosBuscaPatrimonio(numero).slice(0, 10);
-    if (!numerosBusca.length) return null;
+    const candidatos = await buscarCandidatosPorAliases(numerosBusca);
 
-    try {
-        const snapshotAliases = await colecao
-            .where("aliases", "array-contains-any", numerosBusca)
-            .limit(10)
-            .get();
+    for (const doc of candidatos) {
+        const dados = doc.data();
+        const aliases = gerarAliasesNumero(dados.numero, dados.patrimonioAntigo, dados.patAntigo);
+        const mesmoNumero = numerosBusca.some(numeroBusca => aliases.includes(numeroBusca));
+        const mesmoLocal = dados.sessao === sessaoAtual && dados.local === localAtual;
 
-        for (const doc of snapshotAliases.docs) {
-            const dados = doc.data();
-            const aliases = gerarAliasesNumero(dados.numero, dados.patrimonioAntigo, dados.patAntigo);
-            const mesmoNumero = numerosBusca.some(numeroBusca => aliases.includes(numeroBusca));
-            const mesmoLocal = dados.sessao === sessaoAtual && dados.local === localAtual;
-
-            if (mesmoNumero && !mesmoLocal) {
-                return { ref: doc.ref, dados };
-            }
+        if (mesmoNumero && !mesmoLocal) {
+            return { ref: doc.ref, dados };
         }
-    } catch (erro) {
-        console.error("Busca indexada por aliases falhou. A varredura completa foi bloqueada para economizar leituras.", erro);
-        mostrarMensagem("mensagem", "Busca otimizada indisponível. Verifique o índice/aliases no Firebase.", "erro");
     }
 
     return null;
+}
+
+async function buscarCandidatosPorAliases(numerosBusca) {
+    const aliases = Array.from(new Set((numerosBusca || []).filter(Boolean))).slice(0, 10);
+    if (!aliases.length) return [];
+
+    const chave = aliases.join("|");
+    if (cacheBuscaLeituraAtual.has(chave)) return cacheBuscaLeituraAtual.get(chave);
+
+    try {
+        const snapshotAliases = await colecao
+            .where("aliases", "array-contains-any", aliases)
+            .limit(10)
+            .get();
+
+        const candidatos = snapshotAliases.docs;
+        cacheBuscaLeituraAtual.set(chave, candidatos);
+        return candidatos;
+    } catch (erro) {
+        console.error("Busca indexada por aliases falhou. A varredura completa foi bloqueada para economizar leituras.", erro);
+        mostrarMensagem("mensagem", "Busca otimizada indisponível. Verifique o índice/aliases no Firebase.", "erro");
+        cacheBuscaLeituraAtual.set(chave, []);
+        return [];
+    }
 }
 
 async function registrarDivergencia(numero, numeroSemPrefixo, sessao, local, usuario) {
@@ -1421,6 +1438,7 @@ function mostrarMensagem(id, texto, tipo) {
     msg.textContent = texto;
     msg.className = `mensagem ${tipo}`;
 }
+
 
 
 
