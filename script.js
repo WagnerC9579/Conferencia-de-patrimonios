@@ -44,6 +44,7 @@ let pendentesSelecionados = new Map();
 let conferenciasPausadas = false;
 let mensagemPausaConferencias = mensagemPausaPadrao();
 let resolverDecisaoOutroLocal = null;
+let resolverConfirmacaoConferencia = null;
 
 document.addEventListener("DOMContentLoaded", iniciarSistema);
 
@@ -75,6 +76,8 @@ async function iniciarSistema() {
     document.getElementById("btnAtualizarDados")?.addEventListener("click", atualizarDadosSobDemanda);
     document.getElementById("btnDecisaoTransferir")?.addEventListener("click", () => finalizarDecisaoOutroLocal("transferir"));
     document.getElementById("btnDecisaoApenasConferir")?.addEventListener("click", () => finalizarDecisaoOutroLocal("conferir"));
+    document.getElementById("btnCancelarConfirmacaoConferencia")?.addEventListener("click", () => finalizarConfirmacaoConferencia(false));
+    document.getElementById("btnConfirmarConfirmacaoConferencia")?.addEventListener("click", () => finalizarConfirmacaoConferencia(true));
 
     document.getElementById("campopatrimonio").addEventListener("keydown", evento => {
         if (evento.key === "Enter") buscarpatrimonio();
@@ -585,15 +588,43 @@ function atualizarBotaoSelecionados() {
 }
 
 async function marcarPendenteIndividualComoOk(item) {
-    if (!confirm("Confirmar este patrimônio como conferido?")) return;
+    const confirmado = await solicitarConfirmacaoConferencia(1);
+    if (!confirmado) return;
     await marcarPendentesComoConferidos([item]);
 }
 
 async function marcarSelecionadosComoOk() {
     const itens = Array.from(pendentesSelecionados.values());
     if (!itens.length) return;
-    if (!confirm(`Confirmar ${itens.length} patrimônios como conferidos?`)) return;
+    const confirmado = await solicitarConfirmacaoConferencia(itens.length);
+    if (!confirmado) return;
     await marcarPendentesComoConferidos(itens);
+}
+
+function solicitarConfirmacaoConferencia(quantidade) {
+    const texto = quantidade === 1
+        ? "Confirmar este patrimônio como conferido?"
+        : `Confirmar ${quantidade} patrimônios como conferidos?`;
+
+    document.getElementById("textoConfirmacaoConferencia").textContent = texto;
+    document.getElementById("modalConfirmacaoConferencia").hidden = false;
+    document.body.classList.add("modal-decisao-aberto");
+
+    setTimeout(() => document.getElementById("btnConfirmarConfirmacaoConferencia")?.focus(), 0);
+
+    return new Promise(resolve => {
+        resolverConfirmacaoConferencia = resolve;
+    });
+}
+
+function finalizarConfirmacaoConferencia(confirmado) {
+    const modal = document.getElementById("modalConfirmacaoConferencia");
+    if (modal) modal.hidden = true;
+    document.body.classList.remove("modal-decisao-aberto");
+
+    const resolver = resolverConfirmacaoConferencia;
+    resolverConfirmacaoConferencia = null;
+    if (resolver) resolver(Boolean(confirmado));
 }
 
 async function marcarPendentesComoConferidos(itens) {
@@ -1712,6 +1743,7 @@ function mostrarMensagem(id, texto, tipo) {
     msg.textContent = texto;
     msg.className = `mensagem ${tipo}`;
 }
+
 
 
 

@@ -134,6 +134,16 @@
         </section>
     </main>
 
+    <div id="modalConfirmacaoConferencia" class="modal-decisao-local modal-confirmacao-conferencia" hidden>
+        <div class="modal-decisao-local-conteudo" role="dialog" aria-modal="true" aria-labelledby="tituloConfirmacaoConferencia">
+            <h2 id="tituloConfirmacaoConferencia">Confirmar conferência</h2>
+            <p id="textoConfirmacaoConferencia" class="texto-confirmacao-conferencia"></p>
+            <div class="acoes-decisao-local">
+                <button id="btnCancelarConfirmacaoConferencia" type="button" class="secundario">Cancelar</button>
+                <button id="btnConfirmarConfirmacaoConferencia" type="button">Confirmar</button>
+            </div>
+        </div>
+    </div>
     <div id="modalDecisaoOutroLocal" class="modal-decisao-local" hidden>
         <div class="modal-decisao-local-conteudo" role="dialog" aria-modal="true" aria-labelledby="tituloDecisaoOutroLocal">
             <h2 id="tituloDecisaoOutroLocal">Patrimônio encontrado em local diferente</h2>
@@ -163,9 +173,10 @@
         <button id="btnMarcarSelecionadosOk" type="button">Marcar como OK</button>
     </div>
 
-    <script src="script.js?v=20260624-decisao-local"></script>
+    <script src="script.js?v=20260624-modais"></script>
 </body>
 </html>
+
 
 
 

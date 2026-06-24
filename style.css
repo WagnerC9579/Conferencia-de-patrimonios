@@ -976,3 +976,42 @@ body.modal-decisao-aberto {
         grid-template-columns: 1fr;
     }
 }
+
+.texto-confirmacao-conferencia {
+    margin: 8px 0 4px;
+    color: #263746;
+    font-size: 17px;
+    line-height: 1.5;
+    text-align: center;
+}
+
+.modal-confirmacao-conferencia .modal-decisao-local-conteudo {
+    width: min(420px, 100%);
+}
+
+#btnConfirmarConfirmacaoConferencia {
+    background: #17884f;
+}
+
+#btnConfirmarConfirmacaoConferencia:hover {
+    background: #116b3d;
+}
+
+#btnDecisaoTransferir {
+    border: 1px solid #c93636;
+    background: #ffffff;
+    color: #a72d2d;
+}
+
+#btnDecisaoTransferir:hover {
+    background: #fff3f3;
+}
+
+#btnDecisaoApenasConferir.secundario {
+    border-color: #17884f;
+    color: #116b3d;
+}
+
+#btnDecisaoApenasConferir.secundario:hover {
+    background: #eef8f2;
+}
