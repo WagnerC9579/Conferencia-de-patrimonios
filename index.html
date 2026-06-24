@@ -134,14 +134,39 @@
         </section>
     </main>
 
+    <div id="modalDecisaoOutroLocal" class="modal-decisao-local" hidden>
+        <div class="modal-decisao-local-conteudo" role="dialog" aria-modal="true" aria-labelledby="tituloDecisaoOutroLocal">
+            <h2 id="tituloDecisaoOutroLocal">Patrimônio encontrado em local diferente</h2>
+            <dl class="detalhes-decisao-local">
+                <div>
+                    <dt>Patrimônio</dt>
+                    <dd id="decisaoPatrimonioNumero"></dd>
+                </div>
+                <div>
+                    <dt>Cadastrado em</dt>
+                    <dd id="decisaoLocalCadastrado"></dd>
+                </div>
+                <div>
+                    <dt>Encontrado em</dt>
+                    <dd id="decisaoLocalEncontrado"></dd>
+                </div>
+            </dl>
+            <p>Deseja incluir este patrimônio na lista de transferência?</p>
+            <div class="acoes-decisao-local">
+                <button id="btnDecisaoTransferir" type="button">Sim, transferir</button>
+                <button id="btnDecisaoApenasConferir" type="button" class="secundario">Não, apenas conferir</button>
+            </div>
+        </div>
+    </div>
     <div id="barraSelecaoPendentes" class="barra-selecao-pendentes" hidden>
         <span id="quantidadePendentesSelecionados">0 selecionados</span>
         <button id="btnMarcarSelecionadosOk" type="button">Marcar como OK</button>
     </div>
 
-    <script src="script.js?v=20260622-barra-selecao"></script>
+    <script src="script.js?v=20260624-decisao-local"></script>
 </body>
 </html>
+
 
 
 

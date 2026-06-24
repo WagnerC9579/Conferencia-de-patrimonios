@@ -43,6 +43,7 @@ let statusLocaisCache = {};
 let pendentesSelecionados = new Map();
 let conferenciasPausadas = false;
 let mensagemPausaConferencias = mensagemPausaPadrao();
+let resolverDecisaoOutroLocal = null;
 
 document.addEventListener("DOMContentLoaded", iniciarSistema);
 
@@ -72,6 +73,8 @@ async function iniciarSistema() {
     document.getElementById("btnRegistrarContagem")?.addEventListener("click", registrarContagemSemLeitura);
     document.getElementById("btnMarcarSelecionadosOk")?.addEventListener("click", marcarSelecionadosComoOk);
     document.getElementById("btnAtualizarDados")?.addEventListener("click", atualizarDadosSobDemanda);
+    document.getElementById("btnDecisaoTransferir")?.addEventListener("click", () => finalizarDecisaoOutroLocal("transferir"));
+    document.getElementById("btnDecisaoApenasConferir")?.addEventListener("click", () => finalizarDecisaoOutroLocal("conferir"));
 
     document.getElementById("campopatrimonio").addEventListener("keydown", evento => {
         if (evento.key === "Enter") buscarpatrimonio();
@@ -683,14 +686,45 @@ async function buscarpatrimonio(opcoes = {}) {
             const encontradoEmOutroLocal = await localizarPatrimonioEmTodoBanco(num, sessaoSel, localSel);
 
             if (encontradoEmOutroLocal) {
-                if (encontradoEmOutroLocal.dados.status === "conferido") {
-                    mostrarStatusLeitura(`Repetido: ${encontradoEmOutroLocal.dados.numero || numSemPrefixo}`, "aviso");
+
+                const patrimonioJaConferido = encontradoEmOutroLocal.dados.status === "conferido";
+                const decisao = await solicitarDecisaoOutroLocal(encontradoEmOutroLocal, sessaoSel, localSel, numSemPrefixo);
+
+                if (decisao === "transferir") {
+                    await registrarTransferencia(num, numSemPrefixo, encontradoEmOutroLocal, sessaoSel, localSel, user);
+                    vibrar();
+                    mostrarStatusLeitura(`Transferir: ${encontradoEmOutroLocal.dados.numero || numSemPrefixo}`, "aviso");
                     return;
                 }
 
-                await registrarTransferencia(num, numSemPrefixo, encontradoEmOutroLocal, sessaoSel, localSel, user);
+                if (!patrimonioJaConferido) {
+                    await encontradoEmOutroLocal.ref.update({
+                        status: "conferido",
+                        usuario: user,
+                        conferidoEm: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                }
+                await registrarConferenciaForaDoLocal(
+                    num,
+                    numSemPrefixo,
+                    encontradoEmOutroLocal,
+                    sessaoSel,
+                    localSel,
+                    user
+                );
+
+                if (!patrimonioJaConferido) {
+                    if (encontradoEmOutroLocal.dados.sessao === sessaoSel) {
+                        ajustarResumoLotacaoAposConferencias(1);
+                    }
+                    ajustarIndicadorLocalAposConferencias(
+                        encontradoEmOutroLocal.dados.sessao,
+                        encontradoEmOutroLocal.dados.local,
+                        1
+                    );
+                }
                 vibrar();
-                mostrarStatusLeitura(`Transferir: ${encontradoEmOutroLocal.dados.numero || numSemPrefixo}`, "aviso");
+                mostrarStatusLeitura(`Conferido: ${encontradoEmOutroLocal.dados.numero || numSemPrefixo}`, "sucesso");
                 return;
             }
 
@@ -830,6 +864,47 @@ async function buscarCandidatosPorAliases(numerosBusca) {
     }
 }
 
+function solicitarDecisaoOutroLocal(encontrado, sessaoEncontrada, localEncontrado, numeroLido) {
+    const dados = encontrado.dados;
+    document.getElementById("decisaoPatrimonioNumero").textContent = dados.numero || numeroLido || "";
+    document.getElementById("decisaoLocalCadastrado").textContent = `${dados.sessao || "-"} > ${dados.local || "-"}`;
+    document.getElementById("decisaoLocalEncontrado").textContent = `${sessaoEncontrada || "-"} > ${localEncontrado || "-"}`;
+    document.getElementById("modalDecisaoOutroLocal").hidden = false;
+    document.body.classList.add("modal-decisao-aberto");
+
+    return new Promise(resolve => {
+        resolverDecisaoOutroLocal = resolve;
+    });
+}
+
+function finalizarDecisaoOutroLocal(decisao) {
+    const modal = document.getElementById("modalDecisaoOutroLocal");
+    if (modal) modal.hidden = true;
+    document.body.classList.remove("modal-decisao-aberto");
+
+    const resolver = resolverDecisaoOutroLocal;
+    resolverDecisaoOutroLocal = null;
+    if (resolver) resolver(decisao);
+}
+
+async function registrarConferenciaForaDoLocal(numeroInformado, numeroSemPrefixo, encontrado, sessaoEncontrada, localEncontrado, usuario) {
+    const dados = encontrado.dados;
+    await divergenciasColecao.add({
+        numeroInformado,
+        numeroSemPrefixo,
+        numero: dados.numero || numeroSemPrefixo,
+        sessao: sessaoEncontrada,
+        local: localEncontrado,
+        usuario,
+        lotacaoCadastrada: dados.sessao || "",
+        localCadastrado: dados.local || "",
+        lotacaoEncontrada: sessaoEncontrada,
+        localEncontrado,
+        decisao: "Apenas conferir",
+        motivo: "Patrimônio encontrado em local diferente e conferido sem inclusão na lista de transferência.",
+        criadoEm: firebase.firestore.FieldValue.serverTimestamp()
+    });
+}
 async function registrarDivergencia(numero, numeroSemPrefixo, sessao, local, usuario) {
     await divergenciasColecao.add({
         numeroInformado: numero,
@@ -1637,6 +1712,9 @@ function mostrarMensagem(id, texto, tipo) {
     msg.textContent = texto;
     msg.className = `mensagem ${tipo}`;
 }
+
+
+
 
 
 
