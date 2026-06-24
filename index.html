@@ -134,6 +134,20 @@
         </section>
     </main>
 
+    <div id="modalPatrimonioTratado" class="modal-decisao-local modal-patrimonio-tratado" hidden>
+        <div class="modal-decisao-local-conteudo" role="dialog" aria-modal="true" aria-labelledby="tituloPatrimonioTratado">
+            <h2 id="tituloPatrimonioTratado"></h2>
+            <dl class="detalhes-decisao-local detalhes-patrimonio-tratado">
+                <div><dt>Patrimônio</dt><dd id="tratadoNumero"></dd></div>
+                <div><dt>Descrição</dt><dd id="tratadoDescricao"></dd></div>
+                <div><dt>Cadastrado em</dt><dd id="tratadoLocalCadastrado"></dd></div>
+                <div><dt>Encontrado em</dt><dd id="tratadoLocalEncontrado"></dd></div>
+                <div><dt>Responsável</dt><dd id="tratadoResponsavel"></dd></div>
+                <div><dt>Data e hora</dt><dd id="tratadoData"></dd></div>
+            </dl>
+            <button id="btnFecharPatrimonioTratado" type="button" class="botao-fechar-informativo">Fechar</button>
+        </div>
+    </div>
     <div id="modalConfirmacaoConferencia" class="modal-decisao-local modal-confirmacao-conferencia" hidden>
         <div class="modal-decisao-local-conteudo" role="dialog" aria-modal="true" aria-labelledby="tituloConfirmacaoConferencia">
             <h2 id="tituloConfirmacaoConferencia">Confirmar conferência</h2>
@@ -173,9 +187,10 @@
         <button id="btnMarcarSelecionadosOk" type="button">Marcar como OK</button>
     </div>
 
-    <script src="script.js?v=20260624-local-fixo"></script>
+    <script src="script.js?v=20260624-sem-duplicidade"></script>
 </body>
 </html>
+
 
 
 

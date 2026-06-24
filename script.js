@@ -45,6 +45,7 @@ let conferenciasPausadas = false;
 let mensagemPausaConferencias = mensagemPausaPadrao();
 let resolverDecisaoOutroLocal = null;
 let resolverConfirmacaoConferencia = null;
+let resolverPatrimonioTratado = null;
 
 document.addEventListener("DOMContentLoaded", iniciarSistema);
 
@@ -78,6 +79,7 @@ async function iniciarSistema() {
     document.getElementById("btnDecisaoApenasConferir")?.addEventListener("click", () => finalizarDecisaoOutroLocal("conferir"));
     document.getElementById("btnCancelarConfirmacaoConferencia")?.addEventListener("click", () => finalizarConfirmacaoConferencia(false));
     document.getElementById("btnConfirmarConfirmacaoConferencia")?.addEventListener("click", () => finalizarConfirmacaoConferencia(true));
+    document.getElementById("btnFecharPatrimonioTratado")?.addEventListener("click", finalizarPatrimonioTratado);
 
     document.getElementById("campopatrimonio").addEventListener("keydown", evento => {
         if (evento.key === "Enter") buscarpatrimonio();
@@ -723,6 +725,34 @@ async function buscarpatrimonio(opcoes = {}) {
             if (encontradoEmOutroLocal) {
 
                 const patrimonioJaConferido = encontradoEmOutroLocal.dados.status === "conferido";
+
+                if (patrimonioJaConferido) {
+                    mostrarStatusLeitura(`Já conferido: ${encontradoEmOutroLocal.dados.numero || numSemPrefixo}`, "aviso");
+                    await mostrarPatrimonioTratado("conferido", {
+                        numero: encontradoEmOutroLocal.dados.numero || numSemPrefixo,
+                        descricao: encontradoEmOutroLocal.dados.descricao || "",
+                        localCadastrado: textoLocalizacao(encontradoEmOutroLocal.dados.sessao, encontradoEmOutroLocal.dados.local),
+                        localEncontrado: textoLocalizacao(sessaoSel, localSel),
+                        responsavel: encontradoEmOutroLocal.dados.usuario || "",
+                        data: encontradoEmOutroLocal.dados.conferidoEm
+                    });
+                    return;
+                }
+
+                const transferenciaExistente = await localizarTransferenciaExistente(num, encontradoEmOutroLocal);
+                if (transferenciaExistente) {
+                    mostrarStatusLeitura(`Já em transferência: ${transferenciaExistente.numero || numSemPrefixo}`, "aviso");
+                    await mostrarPatrimonioTratado("transferencia", {
+                        numero: transferenciaExistente.numero || numSemPrefixo,
+                        descricao: transferenciaExistente.descricao || "",
+                        localCadastrado: textoLocalizacao(transferenciaExistente.lotacaoCadastrada, transferenciaExistente.localCadastrado),
+                        localEncontrado: textoLocalizacao(transferenciaExistente.lotacaoEncontrada, transferenciaExistente.localEncontrado),
+                        responsavel: transferenciaExistente.responsavel || "",
+                        data: transferenciaExistente.ultimaLeituraEm || transferenciaExistente.primeiraLeituraEm
+                    });
+                    return;
+                }
+
                 const decisao = await solicitarDecisaoOutroLocal(encontradoEmOutroLocal, sessaoSel, localSel, numSemPrefixo);
 
                 if (decisao === "transferir") {
@@ -903,6 +933,71 @@ async function buscarCandidatosPorAliases(numerosBusca) {
     }
 }
 
+async function localizarTransferenciaExistente(numero, encontrado) {
+    const dados = encontrado.dados;
+    const numerosBusca = Array.from(new Set([
+        ...gerarNumerosBuscaPatrimonio(numero),
+        ...gerarAliasesNumero(dados.numero, dados.patrimonioAntigo, dados.patAntigo)
+    ].filter(Boolean))).slice(0, 10);
+
+    if (!numerosBusca.length) return null;
+
+    try {
+        const snapshot = await transferenciasColecao
+            .where("numero", "in", numerosBusca)
+            .limit(1)
+            .get();
+        return snapshot.empty ? null : snapshot.docs[0].data();
+    } catch (erro) {
+        console.error("Erro ao verificar transferência existente.", erro);
+        return null;
+    }
+}
+
+function mostrarPatrimonioTratado(tipo, dados) {
+    const transferencia = tipo === "transferencia";
+    document.getElementById("tituloPatrimonioTratado").textContent = transferencia
+        ? "Patrimônio já incluído na lista de transferência"
+        : "Patrimônio já conferido anteriormente";
+
+    preencherDetalhePatrimonioTratado("tratadoNumero", dados.numero);
+    preencherDetalhePatrimonioTratado("tratadoDescricao", dados.descricao);
+    preencherDetalhePatrimonioTratado("tratadoLocalCadastrado", dados.localCadastrado);
+    preencherDetalhePatrimonioTratado("tratadoLocalEncontrado", dados.localEncontrado);
+    preencherDetalhePatrimonioTratado("tratadoResponsavel", dados.responsavel);
+    preencherDetalhePatrimonioTratado("tratadoData", formatarData(dados.data));
+
+    document.getElementById("modalPatrimonioTratado").hidden = false;
+    document.body.classList.add("modal-decisao-aberto");
+    setTimeout(() => document.getElementById("btnFecharPatrimonioTratado")?.focus(), 0);
+
+    return new Promise(resolve => {
+        resolverPatrimonioTratado = resolve;
+    });
+}
+
+function preencherDetalhePatrimonioTratado(id, valor) {
+    const elemento = document.getElementById(id);
+    if (!elemento) return;
+    const linha = elemento.closest("div");
+    const texto = String(valor || "").trim();
+    elemento.textContent = texto;
+    if (linha) linha.hidden = !texto;
+}
+
+function finalizarPatrimonioTratado() {
+    const modal = document.getElementById("modalPatrimonioTratado");
+    if (modal) modal.hidden = true;
+    document.body.classList.remove("modal-decisao-aberto");
+
+    const resolver = resolverPatrimonioTratado;
+    resolverPatrimonioTratado = null;
+    if (resolver) resolver();
+}
+
+function textoLocalizacao(lotacao, local) {
+    return [lotacao, local].filter(Boolean).join(" > ");
+}
 function solicitarDecisaoOutroLocal(encontrado, sessaoEncontrada, localEncontrado, numeroLido) {
     const dados = encontrado.dados;
     document.getElementById("decisaoPatrimonioNumero").textContent = dados.numero || numeroLido || "";
@@ -1751,6 +1846,7 @@ function mostrarMensagem(id, texto, tipo) {
     msg.textContent = texto;
     msg.className = `mensagem ${tipo}`;
 }
+
 
 
 

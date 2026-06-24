@@ -1015,3 +1015,21 @@ body.modal-decisao-aberto {
 #btnDecisaoApenasConferir.secundario:hover {
     background: #eef8f2;
 }
+
+.modal-patrimonio-tratado .modal-decisao-local-conteudo {
+    width: min(500px, 100%);
+}
+
+.detalhes-patrimonio-tratado div[hidden] {
+    display: none;
+}
+
+.botao-fechar-informativo {
+    width: 100%;
+    margin: 8px 0 0;
+    background: #263746;
+}
+
+.botao-fechar-informativo:hover {
+    background: #1d2c38;
+}
