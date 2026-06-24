@@ -268,7 +268,8 @@ function verificarFluxoSessao() {
 
     if (locaisDisponiveis.length > 1) {
         blocoLocal.style.display = "block";
-        preencherOpcoesLocaisComStatus(sessaoSel, locaisDisponiveis, estadoOperador.local);
+        const localRestaurado = estadoOperador.sessao === sessaoSel ? estadoOperador.local : "";
+        preencherOpcoesLocaisComStatus(sessaoSel, locaisDisponiveis, localRestaurado);
         atualizarIndicadoresLocais(sessaoSel, locaisDisponiveis);
 
         if (estadoOperador.sessao === sessaoSel && estadoOperador.local && locaisDisponiveis.includes(estadoOperador.local)) {
@@ -329,7 +330,10 @@ async function atualizarIndicadoresLocais(sessao, locais) {
         });
 
         statusLocaisCache[sessao] = resumo;
-        preencherOpcoesLocaisComStatus(sessao, locais, getLocalAtual() || estadoOperador.local);
+        if (getSessaoAtual() === sessao) {
+            const localSelecionado = getLocalAtual() || estadoOperador.local;
+            preencherOpcoesLocaisComStatus(sessao, locais, localSelecionado);
+        }
     } catch (erro) {
         console.error("Erro ao carregar indicadores dos locais.", erro);
     }
@@ -815,7 +819,11 @@ function ajustarIndicadorLocalAposConferencias(sessao, local, quantidade) {
     const alterados = Math.min(Number(quantidade) || 0, resumo.pendentes);
     resumo.conferidos += alterados;
     resumo.pendentes -= alterados;
-    preencherOpcoesLocaisComStatus(sessao, getLocaisDaSessao(sessao), local);
+
+    if (getSessaoAtual() === sessao) {
+        const localSelecionado = getLocalAtual() || estadoOperador.local;
+        preencherOpcoesLocaisComStatus(sessao, getLocaisDaSessao(sessao), localSelecionado);
+    }
 }
 
 async function localizarPatrimonio(numero, sessao, local) {
@@ -1743,6 +1751,8 @@ function mostrarMensagem(id, texto, tipo) {
     msg.textContent = texto;
     msg.className = `mensagem ${tipo}`;
 }
+
+
 
 
 
