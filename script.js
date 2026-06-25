@@ -46,6 +46,11 @@ let mensagemPausaConferencias = mensagemPausaPadrao();
 let resolverDecisaoOutroLocal = null;
 let resolverConfirmacaoConferencia = null;
 let resolverPatrimonioTratado = null;
+let contextoAudioLeitura = null;
+let modoLeitorExternoAtivo = false;
+let bufferLeitorExterno = "";
+let ultimoEventoLeitorExterno = 0;
+let leitorExternoProcessando = false;
 
 document.addEventListener("DOMContentLoaded", iniciarSistema);
 
@@ -71,6 +76,7 @@ async function iniciarSistema() {
     document.getElementById("btnConferir").addEventListener("click", buscarpatrimonio);
     document.getElementById("btnAbrirScanner").addEventListener("click", abrirScanner);
     document.getElementById("btnPararScanner").addEventListener("click", pararScanner);
+    document.getElementById("btnModoLeitorExterno")?.addEventListener("click", alternarModoLeitorExterno);
     document.getElementById("btnExportarRelatorioOperador").addEventListener("click", exportarRelatorioOperador);
     document.getElementById("btnRegistrarContagem")?.addEventListener("click", registrarContagemSemLeitura);
     document.getElementById("btnMarcarSelecionadosOk")?.addEventListener("click", marcarSelecionadosComoOk);
@@ -84,6 +90,8 @@ async function iniciarSistema() {
     document.getElementById("campopatrimonio").addEventListener("keydown", evento => {
         if (evento.key === "Enter") buscarpatrimonio();
     });
+
+    document.addEventListener("keydown", capturarLeitorExterno);
 
     if (await bloquearTelaSeConferenciaPausada()) return;
     iniciarMonitoramentoSessoes();
@@ -264,6 +272,7 @@ function verificarFluxoSessao() {
 
     if (!locaisDisponiveis.length) {
         blocoLocal.style.display = "none";
+        renderPainelLateralLotacao(sessaoSel);
         limparTelaResumo();
         return;
     }
@@ -285,6 +294,7 @@ function verificarFluxoSessao() {
 
     blocoLocal.style.display = "none";
     localAtivoFiltro = locaisDisponiveis[0];
+    atualizarIndicadoresLocais(sessaoSel, locaisDisponiveis);
     ativarMonitoramentoFiltro();
 }
 
@@ -332,6 +342,7 @@ async function atualizarIndicadoresLocais(sessao, locais) {
         });
 
         statusLocaisCache[sessao] = resumo;
+        renderPainelLateralLotacao(sessao);
         if (getSessaoAtual() === sessao) {
             const localSelecionado = getLocalAtual() || estadoOperador.local;
             preencherOpcoesLocaisComStatus(sessao, locais, localSelecionado);
@@ -348,6 +359,48 @@ function ordenarLocaisPorStatus(locais, statusSessao) {
         const statusB = classeStatusLocal(statusSessao[b]);
         if (peso[statusA] !== peso[statusB]) return peso[statusA] - peso[statusB];
         return a.localeCompare(b, "pt-BR", { numeric: true });
+    });
+}
+
+function renderPainelLateralLotacao(sessao = getSessaoAtual()) {
+    const painel = document.getElementById("painelLateralLotacao");
+    const titulo = document.getElementById("painelLateralNomeLotacao");
+    const lista = document.getElementById("listaPainelLateralLocais");
+    if (!painel || !titulo || !lista) return;
+
+    if (!sessao) {
+        titulo.textContent = "Selecione a lotação";
+        lista.innerHTML = '<p class="painel-lateral-vazio">Nenhuma lotação selecionada.</p>';
+        return;
+    }
+
+    titulo.textContent = sessao;
+    const statusSessao = statusLocaisCache[sessao] || {};
+    const locais = getLocaisDaSessao(sessao);
+    const locaisPainel = locais.length ? ordenarLocaisPorStatus(locais, statusSessao) : [sessao];
+
+    if (!locaisPainel.length) {
+        lista.innerHTML = '<p class="painel-lateral-vazio">Nenhum local cadastrado.</p>';
+        return;
+    }
+
+    lista.innerHTML = "";
+    locaisPainel.forEach(local => {
+        const resumo = statusSessao[local] || { total: 0, conferidos: 0, pendentes: 0 };
+        const percentual = calcularPercentual(resumo.conferidos || 0, resumo.total || 0);
+        const status = classeStatusLocal(resumo);
+        const item = document.createElement("div");
+        item.className = `item-painel-lateral status-${status}`;
+        item.innerHTML = `
+            <div class="item-painel-topo">
+                <strong>${escaparHtml(local)}</strong>
+                <span>${percentual}%</span>
+            </div>
+            <div class="item-painel-numeros">${resumo.conferidos || 0} / ${resumo.total || 0}</div>
+            <div class="item-painel-pendentes">Pendentes: ${resumo.pendentes || 0}</div>
+            <div class="barra-progresso mini"><div style="width:${percentual}%"></div></div>
+        `;
+        lista.appendChild(item);
     });
 }
 
@@ -678,6 +731,72 @@ async function marcarPendentesComoConferidos(itens) {
     }
 }
 
+function alternarModoLeitorExterno() {
+    modoLeitorExternoAtivo = !modoLeitorExternoAtivo;
+    bufferLeitorExterno = "";
+    ultimoEventoLeitorExterno = 0;
+    atualizarEstadoModoLeitorExterno();
+}
+
+function atualizarEstadoModoLeitorExterno() {
+    const botao = document.getElementById("btnModoLeitorExterno");
+    const status = document.getElementById("statusLeitorExterno");
+
+    if (botao) {
+        botao.classList.toggle("ativo", modoLeitorExternoAtivo);
+        botao.setAttribute("aria-pressed", String(modoLeitorExternoAtivo));
+        botao.textContent = modoLeitorExternoAtivo ? "Leitor externo ativo" : "Modo leitor externo";
+    }
+
+    if (status) {
+        status.hidden = !modoLeitorExternoAtivo;
+        status.textContent = modoLeitorExternoAtivo ? "Leitor externo ativo" : "";
+    }
+}
+
+function capturarLeitorExterno(evento) {
+    if (!modoLeitorExternoAtivo || leitorExternoProcessando) return;
+    if (evento.ctrlKey || evento.altKey || evento.metaKey) return;
+    if (document.body.classList.contains("modal-decisao-aberto")) return;
+
+    const alvo = evento.target;
+    if (alvo && alvo.closest && alvo.closest("input, textarea, select, [contenteditable='true']")) return;
+
+    const agora = Date.now();
+    if (agora - ultimoEventoLeitorExterno > 250) bufferLeitorExterno = "";
+    ultimoEventoLeitorExterno = agora;
+
+    if (evento.key === "Enter") {
+        const codigo = somenteDigitos(bufferLeitorExterno);
+        bufferLeitorExterno = "";
+        if (!codigo) return;
+        evento.preventDefault();
+        processarLeituraExterna(codigo);
+        return;
+    }
+
+    if (/^\d$/.test(evento.key)) {
+        bufferLeitorExterno += evento.key;
+        evento.preventDefault();
+    }
+}
+
+async function processarLeituraExterna(codigo) {
+    if (leitorExternoProcessando) return;
+
+    leitorExternoProcessando = true;
+    try {
+        const numeroLido = somenteDigitos(codigo);
+        const numeroNormalizado = removerPrefixoSegurancaPatrimonio(numeroLido);
+        if (!numeroNormalizado) return;
+        await buscarpatrimonio({ numero: numeroNormalizado, focarCampos: false });
+    } finally {
+        setTimeout(() => {
+            leitorExternoProcessando = false;
+        }, 500);
+    }
+}
+
 async function bloquearLeituraSePausada() {
     const pausado = await verificarConferenciasPausadas();
     if (!pausado) return false;
@@ -690,7 +809,8 @@ async function bloquearLeituraSePausada() {
 }
 async function buscarpatrimonio(opcoes = {}) {
     const podeFocarCampos = opcoes.focarCampos !== false;
-    const num = somenteDigitos(document.getElementById("campopatrimonio").value);
+    const campoPatrimonioEntrada = document.getElementById("campopatrimonio");
+    const num = somenteDigitos(opcoes.numero ?? campoPatrimonioEntrada.value);
     const numSemPrefixo = removerPrefixoSegurancaPatrimonio(num);
     const user = document.getElementById("campoUsuario").value.trim();
     const sessaoSel = getSessaoAtual();
@@ -728,6 +848,7 @@ async function buscarpatrimonio(opcoes = {}) {
 
                 if (patrimonioJaConferido) {
                     mostrarStatusLeitura(`Já conferido: ${encontradoEmOutroLocal.dados.numero || numSemPrefixo}`, "aviso");
+                    tocarBipLeitura("alerta");
                     await mostrarPatrimonioTratado("conferido", {
                         numero: encontradoEmOutroLocal.dados.numero || numSemPrefixo,
                         descricao: encontradoEmOutroLocal.dados.descricao || "",
@@ -741,33 +862,39 @@ async function buscarpatrimonio(opcoes = {}) {
 
                 const transferenciaExistente = await localizarTransferenciaExistente(num, encontradoEmOutroLocal);
                 if (transferenciaExistente) {
+                    const ajustado = await marcarPatrimonioComoConferido(encontradoEmOutroLocal, user);
+                    if (ajustado) {
+                        ajustarContadoresDePatrimonioConferido(encontradoEmOutroLocal.dados, sessaoSel);
+                    }
+
                     mostrarStatusLeitura(`Já em transferência: ${transferenciaExistente.numero || numSemPrefixo}`, "aviso");
+                    tocarBipLeitura("alerta");
                     await mostrarPatrimonioTratado("transferencia", {
                         numero: transferenciaExistente.numero || numSemPrefixo,
                         descricao: transferenciaExistente.descricao || "",
                         localCadastrado: textoLocalizacao(transferenciaExistente.lotacaoCadastrada, transferenciaExistente.localCadastrado),
                         localEncontrado: textoLocalizacao(transferenciaExistente.lotacaoEncontrada, transferenciaExistente.localEncontrado),
-                        responsavel: transferenciaExistente.responsavel || "",
+                        responsavel: transferenciaExistente.responsavel || user || "",
                         data: transferenciaExistente.ultimaLeituraEm || transferenciaExistente.primeiraLeituraEm
                     });
                     return;
                 }
 
+                tocarBipLeitura("alerta");
                 const decisao = await solicitarDecisaoOutroLocal(encontradoEmOutroLocal, sessaoSel, localSel, numSemPrefixo);
 
                 if (decisao === "transferir") {
+                    await marcarPatrimonioComoConferido(encontradoEmOutroLocal, user);
                     await registrarTransferencia(num, numSemPrefixo, encontradoEmOutroLocal, sessaoSel, localSel, user);
+                    ajustarContadoresDePatrimonioConferido(encontradoEmOutroLocal.dados, sessaoSel);
                     vibrar();
-                    mostrarStatusLeitura(`Transferir: ${encontradoEmOutroLocal.dados.numero || numSemPrefixo}`, "aviso");
+                    tocarBipLeitura("ok");
+                    mostrarStatusLeitura(`Transferido e conferido: ${encontradoEmOutroLocal.dados.numero || numSemPrefixo}`, "sucesso");
                     return;
                 }
 
                 if (!patrimonioJaConferido) {
-                    await encontradoEmOutroLocal.ref.update({
-                        status: "conferido",
-                        usuario: user,
-                        conferidoEm: firebase.firestore.FieldValue.serverTimestamp()
-                    });
+                    await marcarPatrimonioComoConferido(encontradoEmOutroLocal, user);
                 }
                 await registrarConferenciaForaDoLocal(
                     num,
@@ -789,17 +916,20 @@ async function buscarpatrimonio(opcoes = {}) {
                     );
                 }
                 vibrar();
+                tocarBipLeitura("ok");
                 mostrarStatusLeitura(`Conferido: ${encontradoEmOutroLocal.dados.numero || numSemPrefixo}`, "sucesso");
                 return;
             }
 
             await registrarNaoCadastrado(num, numSemPrefixo, sessaoSel, localSel, user);
             mostrarStatusLeitura(`Verificar: ${numSemPrefixo}`, "erro");
+            tocarBipLeitura("alerta");
             return;
         }
 
         if (encontrado.dados.status === "conferido") {
             mostrarStatusLeitura(`Repetido: ${encontrado.dados.numero || numSemPrefixo}`, "aviso");
+            tocarBipLeitura("alerta");
             return;
         }
 
@@ -812,6 +942,7 @@ async function buscarpatrimonio(opcoes = {}) {
         recarregarLocal = true;
         ajustarResumoLotacaoAposConferencia();
         vibrar();
+        tocarBipLeitura("ok");
         mostrarStatusLeitura(`Conferido: ${encontrado.dados.numero}`, "sucesso");
     } catch (erro) {
         console.error(erro);
@@ -853,6 +984,7 @@ function ajustarIndicadorLocalAposConferencias(sessao, local, quantidade) {
     if (getSessaoAtual() === sessao) {
         const localSelecionado = getLocalAtual() || estadoOperador.local;
         preencherOpcoesLocaisComStatus(sessao, getLocaisDaSessao(sessao), localSelecionado);
+        renderPainelLateralLotacao(sessao);
     }
 }
 
@@ -997,6 +1129,30 @@ function finalizarPatrimonioTratado() {
 
 function textoLocalizacao(lotacao, local) {
     return [lotacao, local].filter(Boolean).join(" > ");
+}
+
+async function marcarPatrimonioComoConferido(encontrado, usuario) {
+    if (!encontrado || !encontrado.ref || encontrado.dados?.status === "conferido") return false;
+
+    await encontrado.ref.update({
+        status: "conferido",
+        usuario,
+        conferidoEm: firebase.firestore.FieldValue.serverTimestamp()
+    });
+
+    encontrado.dados.status = "conferido";
+    encontrado.dados.usuario = usuario;
+    return true;
+}
+
+function ajustarContadoresDePatrimonioConferido(dados, sessaoAtual) {
+    if (!dados) return;
+
+    if (dados.sessao === sessaoAtual) {
+        ajustarResumoLotacaoAposConferencias(1);
+    }
+
+    ajustarIndicadorLocalAposConferencias(dados.sessao, dados.local, 1);
 }
 function solicitarDecisaoOutroLocal(encontrado, sessaoEncontrada, localEncontrado, numeroLido) {
     const dados = encontrado.dados;
@@ -1310,6 +1466,7 @@ async function processarCodigoScanner(codigo) {
     if (!leituraCameraCompleta(numeroLido)) {
         scannerTravado = true;
         mostrarStatusLeitura("Leitura incompleta", "aviso");
+        tocarBipLeitura("alerta");
 
         setTimeout(() => {
             scannerTravado = false;
@@ -1318,8 +1475,7 @@ async function processarCodigoScanner(codigo) {
     }
 
     scannerTravado = true;
-    document.getElementById("campopatrimonio").value = numeroSemPrefixo;
-    await buscarpatrimonio({ focarCampos: false });
+    await buscarpatrimonio({ numero: numeroSemPrefixo, focarCampos: false });
 
     setTimeout(() => {
         scannerTravado = false;
@@ -1830,6 +1986,34 @@ function salvarEstadoOperador() {
     localStorage.setItem(CHAVE_ESTADO_OPERADOR, JSON.stringify(estado));
 }
 
+function tocarBipLeitura(tipo = "ok") {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+
+    try {
+        contextoAudioLeitura = contextoAudioLeitura || new AudioCtx();
+        if (contextoAudioLeitura.state === "suspended") contextoAudioLeitura.resume();
+
+        const oscilador = contextoAudioLeitura.createOscillator();
+        const ganho = contextoAudioLeitura.createGain();
+        const agora = contextoAudioLeitura.currentTime;
+        const alerta = tipo === "alerta";
+
+        oscilador.type = "sine";
+        oscilador.frequency.setValueAtTime(alerta ? 360 : 880, agora);
+        ganho.gain.setValueAtTime(0.001, agora);
+        ganho.gain.exponentialRampToValueAtTime(alerta ? 0.08 : 0.06, agora + 0.01);
+        ganho.gain.exponentialRampToValueAtTime(0.001, agora + (alerta ? 0.18 : 0.1));
+
+        oscilador.connect(ganho);
+        ganho.connect(contextoAudioLeitura.destination);
+        oscilador.start(agora);
+        oscilador.stop(agora + (alerta ? 0.2 : 0.12));
+    } catch (erro) {
+        console.warn("Não foi possível tocar o bip de leitura.", erro);
+    }
+}
+
 function mostrarStatusLeitura(texto, tipo) {
     const status = document.getElementById("statusLeitura");
     if (!status) return;
@@ -1841,11 +2025,28 @@ function vibrar() {
     if (navigator.vibrate) navigator.vibrate(200);
 }
 
+function escaparHtml(valor) {
+    return String(valor || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
+
 function mostrarMensagem(id, texto, tipo) {
     const msg = document.getElementById(id);
     msg.textContent = texto;
     msg.className = `mensagem ${tipo}`;
 }
+
+
+
+
+
+
+
+
 
 
 

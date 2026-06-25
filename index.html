@@ -15,6 +15,15 @@
 
 <body>
     <main class="container tela-operador">
+        <aside id="painelLateralLotacao" class="painel-lateral-lotacao" aria-label="Andamento dos locais da lotação">
+            <div class="painel-lateral-cabecalho">
+                <h2>Locais da lotação</h2>
+                <span id="painelLateralNomeLotacao">Selecione a lotação</span>
+            </div>
+            <div id="listaPainelLateralLocais" class="lista-painel-lateral">
+                <p class="painel-lateral-vazio">Nenhuma lotação selecionada.</p>
+            </div>
+        </aside>
         <section id="avisoPausaConferencia" class="aviso-pausa-conferencia" hidden></section>
         <header class="topo-operador">
             <h1>Inventário patrimonial</h1>
@@ -71,7 +80,11 @@
             <h2>Leitura</h2>
 
             <div class="scanner-mobile">
-                <button id="btnAbrirScanner" type="button">Iniciar leitura</button>
+                <div class="acoes-leitura">
+                    <button id="btnAbrirScanner" type="button">Iniciar leitura</button>
+                    <button id="btnModoLeitorExterno" type="button" class="botao-leitor-externo" aria-pressed="false">Modo leitor externo</button>
+                </div>
+                <p id="statusLeitorExterno" class="status-leitor-externo" hidden>Leitor externo ativo</p>
 
                 <div id="scannerArea" class="scanner-area">
                     <button id="btnPararScanner" type="button" class="fechar-camera" aria-label="Fechar câmera">×</button>
@@ -187,9 +200,11 @@
         <button id="btnMarcarSelecionadosOk" type="button">Marcar como OK</button>
     </div>
 
-    <script src="script.js?v=20260624-sem-duplicidade"></script>
+    <script src="script.js?v=20260625-leitor-externo"></script>
 </body>
 </html>
+
+
 
 
 
